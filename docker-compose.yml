@@ -7,10 +7,7 @@
 
 services:
   verifid:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: verifid-backend:local
+    image: ${VERIFID_IMAGE:-ghcr.io/savhel/hexagonal-verifid:latest}
     container_name: verifid-backend
     restart: unless-stopped
     environment:
