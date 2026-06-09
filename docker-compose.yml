@@ -12,6 +12,9 @@ services:
     restart: unless-stopped
     environment:
       SERVER_PORT: "8080"
+      # parsing.api.* fourni via SPRING_APPLICATION_JSON (le relaxed binding PARSING_API_URL
+      # ne résout pas le placeholder @Value("${parsing.api.url}") dans cette app).
+      SPRING_APPLICATION_JSON: '{"parsing":{"api":{"url":"${PARSING_API_URL:-https://parsing.invalid/api}","token":"${PARSING_API_TOKEN:-}"}}}'
       # --- Base partagée (DB dédiée "verifid") ---
       SPRING_R2DBC_URL: r2dbc:postgresql://iwm-postgres:5432/${VERIFID_DB_NAME:-verifid}
       SPRING_R2DBC_USERNAME: ${IWM_DB_USER:-iwm}
