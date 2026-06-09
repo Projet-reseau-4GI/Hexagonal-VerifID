@@ -27,6 +27,9 @@ services:
       KERNEL_KAFKA_TOPIC: iwm.events.business
       KERNEL_KAFKA_GROUP_ID: verifid-file-analysis
       # --- Intégrations externes (vides = à compléter plus tard) ---
+      # API de parsing OCR (requise par l'app au démarrage ; valeur factice par défaut pour booter).
+      PARSING_API_URL: ${PARSING_API_URL:-https://parsing.invalid/api}
+      PARSING_API_TOKEN: ${PARSING_API_TOKEN:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       BREVO_API_KEY: ${BREVO_API_KEY:-}
       JWT_SECRET: ${JWT_SECRET:?Definir JWT_SECRET}
