@@ -21,13 +21,13 @@ public class BrevoEmailAdapter implements EmailServicePort {
 
     private final WebClient.Builder webClientBuilder;
 
-    @Value("${brevo.api.key}")
+    @Value("${brevo.api.key:}")
     private String apiKey;
 
-    @Value("${brevo.sender.email}")
+    @Value("${brevo.sender.email:no-reply@verifid.local}")
     private String senderEmail;
 
-    @Value("${brevo.sender.name}")
+    @Value("${brevo.sender.name:VerifID}")
     private String senderName;
 
     private Mono<Void> sendEmail(String to, String subject, String htmlContent) {

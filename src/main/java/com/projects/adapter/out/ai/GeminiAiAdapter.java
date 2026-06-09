@@ -24,9 +24,9 @@ public class GeminiAiAdapter implements AiAnalysisServicePort {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public GeminiAiAdapter(WebClient.Builder webClientBuilder,
-                           @Value("${gemini.api.key}") String apiKey,
-                           @Value("${gemini.model}") String model,
-                           @Value("${gemini.api.url}") String apiUrlTemplate) {
+                           @Value("${gemini.api.key:}") String apiKey,
+                           @Value("${gemini.model:gemini-1.5-flash}") String model,
+                           @Value("${gemini.api.url:}") String apiUrlTemplate) {
         this.webClient = webClientBuilder.build();
         this.apiUrl = apiUrlTemplate.replace("{model}", model).replace("{key}", apiKey);
     }
