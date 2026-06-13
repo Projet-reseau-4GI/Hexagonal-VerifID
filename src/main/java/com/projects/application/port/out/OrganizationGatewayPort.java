@@ -9,6 +9,7 @@ import java.util.UUID;
 public interface OrganizationGatewayPort {
     Mono<Boolean> isSubscribedToService(UUID tenantId, UUID orgId, String serviceCode, String bearerToken);
     Mono<OrganizationSummaryDTO> getOrganization(UUID tenantId, UUID orgId, String bearerToken);
+    Mono<Void> upgradeOrganizationPlan(UUID tenantId, UUID orgId, String newPlan);
     
-    record OrganizationSummaryDTO(UUID id, UUID tenantId, String name, String code, String status) {}
+    record OrganizationSummaryDTO(UUID id, UUID tenantId, String name, String code, String status, String plan) {}
 }

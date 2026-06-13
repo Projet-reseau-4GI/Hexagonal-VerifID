@@ -26,41 +26,50 @@ public class DocumentAnalysisController {
             @RequestPart("frontFile") Mono<FilePart> frontFileMono,
             @RequestPart(value = "backFile", required = false) Mono<FilePart> backFileMono) {
 
-        return ReactiveTenantContext.getPlatform()
-            .switchIfEmpty(Mono.error(new RuntimeException("Platform not found/Invalid API Key")))
-            .flatMap(platform -> frontFileMono.flatMap(frontFile -> {
-                log.info("Starting analysis for platform {} with file {}", platform.getId(), frontFile.filename());
+        Mono<String> orgIdMono = ReactiveTenantContext.getOrganizationId()
+            .switchIfEmpty(Mono.error(new RuntimeException("Organization not found/Invalid API Key")));
+        Mono<Long> apiKeyIdMono = ReactiveTenantContext.getApiKeyId().defaultIfEmpty(-1L);
 
-                Mono<byte[]> frontBytesMono = DataBufferUtils.join(frontFile.content())
-                    .map(db -> {
-                        byte[] b = new byte[db.readableByteCount()];
-                        db.read(b);
-                        DataBufferUtils.release(db);
-                        return b;
-                    });
+        return Mono.zip(orgIdMono, apiKeyIdMono)
+            .flatMap(ctx -> {
+                String organizationId = ctx.getT1();
+                Long apiKeyId = ctx.getT2() == -1L ? null : ctx.getT2();
 
-                Mono<byte[]> backBytesMono = backFileMono
-                    .ofType(FilePart.class)
-                    .flatMap(bf -> DataBufferUtils.join(bf.content())
+                return frontFileMono.flatMap(frontFile -> {
+                    log.info("Starting analysis for organization {} (apiKeyId={}) with file {}",
+                        organizationId, apiKeyId, frontFile.filename());
+
+                    Mono<byte[]> frontBytesMono = DataBufferUtils.join(frontFile.content())
                         .map(db -> {
                             byte[] b = new byte[db.readableByteCount()];
                             db.read(b);
                             DataBufferUtils.release(db);
                             return b;
-                        }))
-                    .defaultIfEmpty(new byte[0]);
+                        });
 
-                return Mono.zip(frontBytesMono, backBytesMono)
-                    .flatMap(bytesTuple -> {
-                        byte[] frontBytes = bytesTuple.getT1();
-                        byte[] backBytes = bytesTuple.getT2();
-                        
-                        return analyzeDocumentUseCase.analyzeDocument(
-                                frontBytes, 
-                                backBytes.length > 0 ? backBytes : null, 
-                                frontFile.filename(), 
-                                platform.getId());
-                    });
-            }));
+                    Mono<byte[]> backBytesMono = backFileMono
+                        .ofType(FilePart.class)
+                        .flatMap(bf -> DataBufferUtils.join(bf.content())
+                            .map(db -> {
+                                byte[] b = new byte[db.readableByteCount()];
+                                db.read(b);
+                                DataBufferUtils.release(db);
+                                return b;
+                            }))
+                        .defaultIfEmpty(new byte[0]);
+
+                    return Mono.zip(frontBytesMono, backBytesMono)
+                        .flatMap(bytesTuple -> {
+                            byte[] frontBytes = bytesTuple.getT1();
+                            byte[] backBytes = bytesTuple.getT2();
+                            return analyzeDocumentUseCase.analyzeDocument(
+                                    frontBytes,
+                                    backBytes.length > 0 ? backBytes : null,
+                                    frontFile.filename(),
+                                    organizationId,
+                                    apiKeyId);
+                        });
+                });
+            });
     }
 }

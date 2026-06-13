@@ -10,7 +10,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class UsageStatisticDto {
-    private Long platformId;
+    private String platformId;
     private String docType;
     private Long totalLogs;
     private Double successRate;

@@ -21,8 +21,9 @@ public class SecurityConfig {
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(
             ServerHttpSecurity http,
-            JwtAuthenticationFilter jwtFilter,
-            KernelTenantContextFilter kernelTenantContextFilter) {
+            KernelTenantContextFilter kernelTenantContextFilter,
+            ApiKeyAuthenticationFilter apiKeyAuthenticationFilter,
+            AdminJwtAuthenticationFilter adminJwtAuthenticationFilter) {
 
         return http
             .csrf(csrf -> csrf.disable())
@@ -32,45 +33,31 @@ public class SecurityConfig {
                     "/swagger-ui.html", "/swagger-ui/**",
                     "/v3/api-docs/**", "/api-docs/**", "/webjars/**"
                 ).permitAll()
-                // Public: Auth endpoints locaux VerifID
-                .pathMatchers(
-                    "/api/auth/register",
-                    "/api/auth/verify-email",
-                    "/api/auth/resend-otp",
-                    "/api/auth/login",
-                    "/api/auth/forgot-password",
-                    "/api/auth/reset-password"
-                ).permitAll()
-                // Public: OTP legacy
-                .pathMatchers("/api/auth/otp/**").permitAll()
                 // Public: Health & métriques
                 .pathMatchers("/api/metrics/**").permitAll()
                 .pathMatchers("/actuator/**").permitAll()
+                // Webhook Stripe
+                .pathMatchers("/api/payments/webhook").permitAll()
+                // SDK Snippets
+                .pathMatchers("/api/sdk/**").permitAll()
+                // Admin Traceability (protected by AdminJwtAuthenticationFilter)
+                .pathMatchers("/api/admin/traceability/**").hasRole("SUPER_ADMIN")
                 // Public: Vérification de documents (auth par X-API-KEY ou JWT kernel)
                 .pathMatchers("/api/verify/**", "/api/documents/**").permitAll()
                 // Public: Dashboard
                 .pathMatchers("/api/dashboard/**").permitAll()
-                // Public: Seeder (à restreindre en prod)
-                .pathMatchers("/api/admin/seed-data").permitAll()
-                // Protected: profil, changement de mot de passe, régénération token
-                .pathMatchers(
-                    "/api/auth/me",
-                    "/api/auth/change-password",
-                    "/api/auth/regenerate-token/**",
-                    "/api/auth/confirm-regenerate/**",
-                    "/api/admin/platforms/**"
-                ).authenticated()
+                // Any other exchange is permitted since we rely on Gateway/Kernel for external auth, 
+                // and API Key filter for documents.
                 .anyExchange().permitAll()
             )
             /*
              * Ordre des filtres :
              *  1. KernelTenantContextFilter  — lit X-Tenant-Id, X-Org-Id et valide le JWT RS256
-             *     via JWKS du kernel. Injecte KernelTokenClaims dans le contexte réactif.
-             *  2. JwtAuthenticationFilter    — valide le JWT HS256 local (rétrocompatibilité).
-             *     Sera progressivement remplacé par RS256 quand kernel.jwt.rs256-enabled=true.
+             *  2. ApiKeyAuthenticationFilter — valide X-API-KEY pour l'analyse de documents
              */
             .addFilterBefore(kernelTenantContextFilter, SecurityWebFiltersOrder.AUTHENTICATION)
-            .addFilterAt(jwtFilter, SecurityWebFiltersOrder.AUTHENTICATION)
+            .addFilterAt(adminJwtAuthenticationFilter, SecurityWebFiltersOrder.AUTHENTICATION)
+            .addFilterAt(apiKeyAuthenticationFilter, SecurityWebFiltersOrder.AUTHENTICATION)
             .build();
     }
 }

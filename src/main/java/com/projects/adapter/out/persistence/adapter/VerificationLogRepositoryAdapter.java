@@ -33,4 +33,19 @@ public class VerificationLogRepositoryAdapter implements VerificationLogReposito
     public Mono<VerificationLog> findById(Long id) {
         return repository.findById(id).map(mapper::toDomain);
     }
+
+    @Override
+    public Mono<Long> countByPlatformIdAndDateAfter(String platformId, java.time.LocalDateTime date) {
+        return repository.countByPlatformIdAndDateAfter(platformId, date);
+    }
+
+    @Override
+    public Flux<VerificationLog> findByPlatformId(String platformId) {
+        return repository.findByPlatformId(platformId).map(mapper::toDomain);
+    }
+
+    @Override
+    public Flux<VerificationLog> findByApiKeyId(Long apiKeyId) {
+        return repository.findByApiKeyId(apiKeyId).map(mapper::toDomain);
+    }
 }

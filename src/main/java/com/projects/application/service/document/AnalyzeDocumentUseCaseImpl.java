@@ -39,6 +39,7 @@ public class AnalyzeDocumentUseCaseImpl implements AnalyzeDocumentUseCase {
     private final FileStoragePort fileStoragePort;
     private final Validator validator;
     private final ObjectMapper objectMapper;
+    private final com.projects.application.port.in.billing.CheckQuotaUseCase checkQuotaUseCase;
 
     private static final DateTimeFormatter[] DATE_FORMATTERS = {
         DateTimeFormatter.ofPattern("dd.MM.yyyy"), DateTimeFormatter.ofPattern("dd/MM/yyyy"),
@@ -48,37 +49,49 @@ public class AnalyzeDocumentUseCaseImpl implements AnalyzeDocumentUseCase {
 
     @Override
     public Mono<DocumentAnalysisResponse> analyzeDocument(byte[] frontBytes, byte[] backBytes,
-                                                           String frontFilename, Long platformId) {
+                                                           String frontFilename, String organizationId, Long apiKeyId) {
         boolean isPdf = frontFilename != null && frontFilename.toLowerCase().endsWith(".pdf");
 
-        return analyzeAndLog(frontBytes, backBytes, isPdf, platformId)
-            .flatMap(response -> {
-                Mono<DocumentAnalysisResponse> resultMono = Mono.just(response);
-                if (Boolean.TRUE.equals(response.getIsValid())) {
-                    // Upload file to file_core if valid (chemin synchrone REST historique)
-                    Flux<org.springframework.core.io.buffer.DataBuffer> contentFlux = Flux.just(new DefaultDataBufferFactory().wrap(frontBytes));
-                    return fileStoragePort.storeFile(frontFilename, isPdf ? "application/pdf" : "image/jpeg", contentFlux, null, null, null)
-                            .then(resultMono)
-                            .onErrorResume(e -> {
-                                log.error("Failed to upload document to file_core: {}", e.getMessage());
-                                return resultMono;
-                            });
+        return checkQuotaUseCase.isQuotaAvailable(organizationId)
+            .flatMap(isAvailable -> {
+                if (!isAvailable) {
+                    return Mono.error(new RuntimeException("QUOTA_EXCEEDED: Daily limit reached for this organization."));
                 }
-                return resultMono;
+                return analyzeAndLog(frontBytes, backBytes, isPdf, organizationId, apiKeyId)
+                    .flatMap(response -> {
+                        Mono<DocumentAnalysisResponse> resultMono = Mono.just(response);
+                        if (Boolean.TRUE.equals(response.getIsValid())) {
+                            // Upload file to file_core if valid (chemin synchrone REST historique)
+                            Flux<org.springframework.core.io.buffer.DataBuffer> contentFlux = Flux.just(new DefaultDataBufferFactory().wrap(frontBytes));
+                            return fileStoragePort.storeFile(frontFilename, isPdf ? "application/pdf" : "image/jpeg", contentFlux, null, null, null)
+                                    .then(resultMono)
+                                    .onErrorResume(e -> {
+                                        log.error("Failed to upload document to file_core: {}", e.getMessage());
+                                        return resultMono;
+                                    });
+                        }
+                        return resultMono;
+                    });
             });
     }
 
     @Override
     public Mono<DocumentAnalysisResponse> analyzeStoredDocument(byte[] frontBytes, String frontFilename,
-                                                                Long platformId) {
+                                                                String organizationId, Long apiKeyId) {
         boolean isPdf = frontFilename != null && frontFilename.toLowerCase().endsWith(".pdf");
         // Le fichier est déjà stocké dans le Kernel (mode asynchrone) → pas de ré-upload.
-        return analyzeAndLog(frontBytes, null, isPdf, platformId);
+        return checkQuotaUseCase.isQuotaAvailable(organizationId)
+            .flatMap(isAvailable -> {
+                if (!isAvailable) {
+                    return Mono.error(new RuntimeException("QUOTA_EXCEEDED: Daily limit reached for this organization."));
+                }
+                return analyzeAndLog(frontBytes, null, isPdf, organizationId, apiKeyId);
+            });
     }
 
     /** OCR → IA → validation → enregistrement du log. Commun aux modes synchrone et asynchrone. */
     private Mono<DocumentAnalysisResponse> analyzeAndLog(byte[] frontBytes, byte[] backBytes, boolean isPdf,
-                                                         Long platformId) {
+                                                         String organizationId, Long apiKeyId) {
         Mono<String> frontOcr = ocrService.extractText(frontBytes, isPdf);
         Mono<String> backOcr = backBytes != null && backBytes.length > 0
             ? ocrService.extractText(backBytes, isPdf)
@@ -90,7 +103,7 @@ public class AnalyzeDocumentUseCaseImpl implements AnalyzeDocumentUseCase {
                 return aiService.extractDocumentData(combined)
                     .map(geminiFields -> buildAnalysisResponse(tuple.getT1(), tuple.getT2(), geminiFields, combined));
             })
-            .flatMap(response -> logVerification(response, platformId).thenReturn(response));
+            .flatMap(response -> logVerification(response, organizationId, apiKeyId).thenReturn(response));
     }
 
     private DocumentAnalysisResponse buildAnalysisResponse(String front, String back,
@@ -149,7 +162,7 @@ public class AnalyzeDocumentUseCaseImpl implements AnalyzeDocumentUseCase {
         return response;
     }
 
-    private Mono<Void> logVerification(DocumentAnalysisResponse response, Long platformId) {
+    private Mono<Void> logVerification(DocumentAnalysisResponse response, String organizationId, Long apiKeyId) {
         String additionalFieldsJson = null;
         if (response.getAdditionalFields() != null && !response.getAdditionalFields().isEmpty()) {
             try { additionalFieldsJson = objectMapper.writeValueAsString(response.getAdditionalFields()); }
@@ -159,7 +172,7 @@ public class AnalyzeDocumentUseCaseImpl implements AnalyzeDocumentUseCase {
         String reason = Boolean.TRUE.equals(response.getIsValid()) ? null : response.getValidationMessage();
 
         VerificationLog logEntry = VerificationLog.builder()
-            .platformId(platformId).date(LocalDateTime.now())
+            .platformId(organizationId).apiKeyId(apiKeyId).date(LocalDateTime.now())
             .docType(response.getDocumentType()).status(status).reason(reason)
             .confidence(response.getConfidenceScore()).processingTimeMs(1500)
             .documentNumber(response.getDocumentNumber()).holderName(response.getHolderName())

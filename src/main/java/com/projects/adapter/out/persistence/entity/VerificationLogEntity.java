@@ -18,7 +18,8 @@ import java.time.LocalDateTime;
 public class VerificationLogEntity {
 
     @Id private Long id;
-    @Column("platform_id") private Long platformId;
+    @Column("platform_id") private String platformId;
+    @Column("api_key_id") private Long apiKeyId;
     @Column("date") private LocalDateTime date;
     @Column("doc_type") private String docType;
     @Column("status") private String status;

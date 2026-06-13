@@ -9,7 +9,8 @@ import java.time.LocalDateTime;
 public class VerificationLog {
 
     private Long id;
-    private Long platformId;
+    private String platformId;
+    private Long apiKeyId;
     private LocalDateTime date;
     private String docType;
     private String status;
@@ -28,6 +29,7 @@ public class VerificationLog {
     private VerificationLog(Builder b) {
         this.id = b.id;
         this.platformId = b.platformId;
+        this.apiKeyId = b.apiKeyId;
         this.date = b.date;
         this.docType = b.docType;
         this.status = b.status;
@@ -46,7 +48,8 @@ public class VerificationLog {
 
     public static class Builder {
         private Long id;
-        private Long platformId;
+        private String platformId;
+        private Long apiKeyId;
         private LocalDateTime date;
         private String docType;
         private String status;
@@ -61,7 +64,8 @@ public class VerificationLog {
         private String additionalFields;
 
         public Builder id(Long id) { this.id = id; return this; }
-        public Builder platformId(Long platformId) { this.platformId = platformId; return this; }
+        public Builder platformId(String platformId) { this.platformId = platformId; return this; }
+        public Builder apiKeyId(Long apiKeyId) { this.apiKeyId = apiKeyId; return this; }
         public Builder date(LocalDateTime date) { this.date = date; return this; }
         public Builder docType(String docType) { this.docType = docType; return this; }
         public Builder status(String status) { this.status = status; return this; }
@@ -78,7 +82,8 @@ public class VerificationLog {
     }
 
     public Long getId() { return id; }
-    public Long getPlatformId() { return platformId; }
+    public String getPlatformId() { return platformId; }
+    public Long getApiKeyId() { return apiKeyId; }
     public LocalDateTime getDate() { return date; }
     public String getDocType() { return docType; }
     public String getStatus() { return status; }
@@ -93,7 +98,8 @@ public class VerificationLog {
     public String getAdditionalFields() { return additionalFields; }
 
     public void setId(Long id) { this.id = id; }
-    public void setPlatformId(Long platformId) { this.platformId = platformId; }
+    public void setPlatformId(String platformId) { this.platformId = platformId; }
+    public void setApiKeyId(Long apiKeyId) { this.apiKeyId = apiKeyId; }
     public void setDate(LocalDateTime date) { this.date = date; }
     public void setDocType(String docType) { this.docType = docType; }
     public void setStatus(String status) { this.status = status; }

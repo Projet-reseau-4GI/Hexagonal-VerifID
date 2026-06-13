@@ -1,7 +1,6 @@
 package com.projects.config;
 
 import com.projects.adapter.out.kernel.KernelTokenClaims;
-import com.projects.domain.model.Platform;
 import reactor.core.publisher.Mono;
 import reactor.util.context.Context;
 
@@ -18,18 +17,24 @@ public class ReactiveTenantContext {
 
     public static final String TENANT_KEY        = "CURRENT_PLATFORM_TENANT";
     public static final String KERNEL_TENANT_KEY = "KERNEL_TENANT_CONTEXT";
+    public static final String API_KEY_ID_KEY    = "CURRENT_API_KEY_ID";
 
     // ----------------------------------------------------------------
     // Platform locale (rétrocompatibilité)
     // ----------------------------------------------------------------
 
-    public static Context putPlatform(Context context, Platform platform) {
-        return context.put(TENANT_KEY, platform);
+    public static Context putOrganizationId(Context context, String organizationId) {
+        return context.put(TENANT_KEY, organizationId);
     }
 
-    public static Mono<Platform> getPlatform() {
+    public static Mono<String> getOrganizationId() {
         return Mono.deferContextual(ctx ->
                 ctx.hasKey(TENANT_KEY) ? Mono.just(ctx.get(TENANT_KEY)) : Mono.empty());
+    }
+
+    public static Mono<Long> getApiKeyId() {
+        return Mono.deferContextual(ctx ->
+                ctx.hasKey(API_KEY_ID_KEY) ? Mono.just(ctx.get(API_KEY_ID_KEY)) : Mono.empty());
     }
 
     // ----------------------------------------------------------------

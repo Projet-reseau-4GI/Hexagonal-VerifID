@@ -94,12 +94,27 @@ public class KernelOrganizationService implements OrganizationGatewayPort {
                                 parseUuid(org, "tenantId"),
                                 parseString(org, "name"),
                                 parseString(org, "code"),
-                                parseString(org, "status")
+                                parseString(org, "status"),
+                                parseString(org, "plan") // Parse plan
                         );
                     }
                     throw new IllegalStateException("Réponse organization-core inattendue");
                 })
                 .doOnError(e -> log.error("[org-core] Erreur récupération org={} : {}", orgId, e.getMessage()));
+    }
+
+    /**
+     * Demande la mise à jour du forfait d'une organisation via organization-core.
+     */
+    @Override
+    public Mono<Void> upgradeOrganizationPlan(UUID tenantId, UUID orgId, String newPlan) {
+        return kernelWebClient.put()
+                .uri(ORGANIZATIONS_BASE + "/" + orgId + "/plan")
+                .headers(h -> applyKernelHeaders(h, tenantId, orgId, null))
+                .bodyValue(Map.of("plan", newPlan))
+                .retrieve()
+                .bodyToMono(Void.class)
+                .doOnError(e -> log.error("[org-core] Erreur mise à jour plan pour org={} : {}", orgId, e.getMessage()));
     }
 
     // Utilitaires

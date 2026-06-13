@@ -1,13 +1,13 @@
 package com.projects.application.port.in.admin;
 
-import com.projects.adapter.in.web.dto.*;
+import com.projects.adapter.in.web.dto.admin.AdminLoginRequest;
+import com.projects.adapter.in.web.dto.admin.AdminRegisterRequest;
+import com.projects.adapter.in.web.dto.admin.AdminVerifyOtpRequest;
+import com.projects.adapter.in.web.dto.admin.AdminAuthResponse;
 import reactor.core.publisher.Mono;
 
-/**
- * Inbound port — SuperAdmin authentication use cases.
- */
 public interface AdminAuthUseCase {
-    Mono<Void> register(AdminRegisterRequestSuperAdmin req);
-    Mono<LoginResponse> verifyRegistration(AdminVerifyOtpRequestSuperAdmin req);
-    Mono<LoginResponse> login(AdminLoginRequestSuperAdmin req);
+    Mono<Void> registerAdmin(AdminRegisterRequest request);
+    Mono<Void> loginAdmin(AdminLoginRequest request);
+    Mono<AdminAuthResponse> verifyOtp(AdminVerifyOtpRequest request);
 }

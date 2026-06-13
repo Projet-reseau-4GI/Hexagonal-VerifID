@@ -27,7 +27,6 @@ public class SwaggerConfig {
                 .version("2.0")
                 .description(
                     "Plateforme de vérification de pièces d'identité camerounaises. " +
-                    "Utiliser le token JWT (obtenu via `POST /api/auth/login`) pour les routes protégées. " +
                     "Utiliser la clé API pour les routes de vérification de documents."
                 )
                 .contact(new Contact()
@@ -37,17 +36,6 @@ public class SwaggerConfig {
             .servers(List.of(
                 new Server().url(serverUrl).description("Serveur principal"),
                 new Server().url("http://localhost:8080").description("Développement local")
-            ))
-            // JWT Bearer Auth scheme
-            .addSecurityItem(new SecurityRequirement().addList("bearerAuth"))
-            .components(new Components()
-                .addSecuritySchemes("bearerAuth",
-                    new SecurityScheme()
-                        .type(SecurityScheme.Type.HTTP)
-                        .scheme("bearer")
-                        .bearerFormat("JWT")
-                        .description("JWT de session. Obtenu via POST /api/auth/login")
-                )
-            );
+            ));
     }
 }

@@ -90,7 +90,8 @@ public class FileAnalysisRequestConsumer {
 
     private Mono<Void> process(UUID fileId, UUID tenantId, UUID orgId, String fileName) {
         return fileStoragePort.downloadContent(fileId, tenantId, orgId)
-                .flatMap(bytes -> analyzeDocumentUseCase.analyzeStoredDocument(bytes, fileName, null))
+                .flatMap(bytes -> analyzeDocumentUseCase.analyzeStoredDocument(bytes, fileName,
+                        orgId != null ? orgId.toString() : null, null))
                 .flatMap(result -> resultPublisher.publishCompleted(
                         tenantId, orgId, fileId,
                         Boolean.TRUE.equals(result.getIsValid()),

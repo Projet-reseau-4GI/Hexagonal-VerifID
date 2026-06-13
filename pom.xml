@@ -44,6 +44,17 @@
     <!--        DEPENDENCIES       -->
     <!-- ========================= -->
     <dependencies>
+        <!-- H2 In-Memory Database for local dev without Postgres -->
+        <dependency>
+            <groupId>io.r2dbc</groupId>
+            <artifactId>r2dbc-h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
 
         <!-- Spring WebFlux:
              Reactive web framework (non-blocking, Mono / Flux) -->

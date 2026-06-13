@@ -1,7 +1,7 @@
 package com.projects.config;
 
 import com.projects.adapter.out.security.SecurityUtils;
-import com.projects.application.port.out.PlatformRepositoryPort;
+import com.projects.application.port.out.OrganizationApiKeyRepositoryPort;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -12,7 +12,6 @@ import reactor.core.publisher.Mono;
 
 /**
  * Filtre WebFlux qui valide la clé API pour les endpoints documents.
- * Utilise PlatformRepositoryPort (hexagonal) au lieu de l'ancien PlatformRepository.
  */
 @Component
 @RequiredArgsConstructor
@@ -20,7 +19,7 @@ public class ApiKeyAuthenticationFilter implements WebFilter {
 
     private static final String API_KEY_HEADER = "X-API-KEY";
 
-    private final PlatformRepositoryPort platformRepository;
+    private final OrganizationApiKeyRepositoryPort apiKeyRepository;
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
@@ -43,11 +42,13 @@ public class ApiKeyAuthenticationFilter implements WebFilter {
 
         String hashedApiKey = SecurityUtils.hashApiKey(apiKey);
 
-        return platformRepository.findByApiKey(hashedApiKey)
-                .filter(platform -> Boolean.TRUE.equals(platform.getActive()))
-                .flatMap(platform ->
+        return apiKeyRepository.findByApiKeyHash(hashedApiKey)
+                .filter(key -> Boolean.TRUE.equals(key.getActive()))
+                .flatMap(key ->
                      chain.filter(exchange)
-                          .contextWrite(ctx -> ReactiveTenantContext.putPlatform(ctx, platform))
+                          .contextWrite(ctx -> ReactiveTenantContext
+                              .putOrganizationId(ctx, key.getOrganizationId())
+                              .put(ReactiveTenantContext.API_KEY_ID_KEY, key.getId()))
                 )
                 .switchIfEmpty(Mono.defer(() -> {
                     exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);

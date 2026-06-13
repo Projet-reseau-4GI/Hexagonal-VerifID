@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class RecentVerificationDto {
     private Long id;
-    private Long platformId;
+    private String platformId;
     private String platformName;
     private LocalDateTime date;
     private String docType;
