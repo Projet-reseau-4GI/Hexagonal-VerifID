@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 public class AdminEntity {
     @Id
     private Long id;
+    private String name;
     private String email;
     private String passwordHash;
     private String role;

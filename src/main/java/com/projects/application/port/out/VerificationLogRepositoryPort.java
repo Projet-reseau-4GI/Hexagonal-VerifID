@@ -12,6 +12,5 @@ public interface VerificationLogRepositoryPort {
     Flux<VerificationLog> findAll();
     Mono<VerificationLog> findById(Long id);
     Flux<VerificationLog> findByPlatformId(String platformId);
-    Flux<VerificationLog> findByApiKeyId(Long apiKeyId);
     Mono<Long> countByPlatformIdAndDateAfter(String platformId, java.time.LocalDateTime date);
 }

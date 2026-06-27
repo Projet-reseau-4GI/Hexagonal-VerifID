@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class Admin {
     private Long id;
+    private String name;
     private String email;
     private String passwordHash;
     private String role;

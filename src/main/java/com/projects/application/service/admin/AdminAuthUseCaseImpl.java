@@ -33,6 +33,7 @@ public class AdminAuthUseCaseImpl implements AdminAuthUseCase {
                 .switchIfEmpty(Mono.defer(() -> {
                     String otp = generateOtp();
                     Admin admin = Admin.builder()
+                            .name(request.getName())
                             .email(request.getEmail())
                             .passwordHash(passwordEncoder.encode(request.getPassword()))
                             .role("SUPER_ADMIN")

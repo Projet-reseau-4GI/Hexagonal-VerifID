@@ -28,16 +28,13 @@ public class DocumentAnalysisController {
 
         Mono<String> orgIdMono = ReactiveTenantContext.getOrganizationId()
             .switchIfEmpty(Mono.error(new RuntimeException("Organization not found/Invalid API Key")));
-        Mono<Long> apiKeyIdMono = ReactiveTenantContext.getApiKeyId().defaultIfEmpty(-1L);
 
-        return Mono.zip(orgIdMono, apiKeyIdMono)
-            .flatMap(ctx -> {
-                String organizationId = ctx.getT1();
-                Long apiKeyId = ctx.getT2() == -1L ? null : ctx.getT2();
+        return orgIdMono
+            .flatMap(organizationId -> {
 
                 return frontFileMono.flatMap(frontFile -> {
-                    log.info("Starting analysis for organization {} (apiKeyId={}) with file {}",
-                        organizationId, apiKeyId, frontFile.filename());
+                    log.info("Starting analysis for organization {} with file {}",
+                        organizationId, frontFile.filename());
 
                     Mono<byte[]> frontBytesMono = DataBufferUtils.join(frontFile.content())
                         .map(db -> {
@@ -66,8 +63,7 @@ public class DocumentAnalysisController {
                                     frontBytes,
                                     backBytes.length > 0 ? backBytes : null,
                                     frontFile.filename(),
-                                    organizationId,
-                                    apiKeyId);
+                                    organizationId);
                         });
                 });
             });

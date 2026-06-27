@@ -9,6 +9,7 @@ import com.projects.domain.model.VerificationLog;
 import com.projects.adapter.in.web.dto.DocumentAnalysisResponse;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;
@@ -40,6 +41,7 @@ public class AnalyzeDocumentUseCaseImpl implements AnalyzeDocumentUseCase {
     private final Validator validator;
     private final ObjectMapper objectMapper;
     private final com.projects.application.port.in.billing.CheckQuotaUseCase checkQuotaUseCase;
+    private final MeterRegistry meterRegistry;
 
     private static final DateTimeFormatter[] DATE_FORMATTERS = {
         DateTimeFormatter.ofPattern("dd.MM.yyyy"), DateTimeFormatter.ofPattern("dd/MM/yyyy"),
@@ -49,7 +51,7 @@ public class AnalyzeDocumentUseCaseImpl implements AnalyzeDocumentUseCase {
 
     @Override
     public Mono<DocumentAnalysisResponse> analyzeDocument(byte[] frontBytes, byte[] backBytes,
-                                                           String frontFilename, String organizationId, Long apiKeyId) {
+                                                           String frontFilename, String organizationId) {
         boolean isPdf = frontFilename != null && frontFilename.toLowerCase().endsWith(".pdf");
 
         return checkQuotaUseCase.isQuotaAvailable(organizationId)
@@ -57,7 +59,7 @@ public class AnalyzeDocumentUseCaseImpl implements AnalyzeDocumentUseCase {
                 if (!isAvailable) {
                     return Mono.error(new RuntimeException("QUOTA_EXCEEDED: Daily limit reached for this organization."));
                 }
-                return analyzeAndLog(frontBytes, backBytes, isPdf, organizationId, apiKeyId)
+                return analyzeAndLog(frontBytes, backBytes, isPdf, organizationId)
                     .flatMap(response -> {
                         Mono<DocumentAnalysisResponse> resultMono = Mono.just(response);
                         if (Boolean.TRUE.equals(response.getIsValid())) {
@@ -77,7 +79,7 @@ public class AnalyzeDocumentUseCaseImpl implements AnalyzeDocumentUseCase {
 
     @Override
     public Mono<DocumentAnalysisResponse> analyzeStoredDocument(byte[] frontBytes, String frontFilename,
-                                                                String organizationId, Long apiKeyId) {
+                                                                String organizationId) {
         boolean isPdf = frontFilename != null && frontFilename.toLowerCase().endsWith(".pdf");
         // Le fichier est déjà stocké dans le Kernel (mode asynchrone) → pas de ré-upload.
         return checkQuotaUseCase.isQuotaAvailable(organizationId)
@@ -85,13 +87,13 @@ public class AnalyzeDocumentUseCaseImpl implements AnalyzeDocumentUseCase {
                 if (!isAvailable) {
                     return Mono.error(new RuntimeException("QUOTA_EXCEEDED: Daily limit reached for this organization."));
                 }
-                return analyzeAndLog(frontBytes, null, isPdf, organizationId, apiKeyId);
+                return analyzeAndLog(frontBytes, null, isPdf, organizationId);
             });
     }
 
     /** OCR → IA → validation → enregistrement du log. Commun aux modes synchrone et asynchrone. */
     private Mono<DocumentAnalysisResponse> analyzeAndLog(byte[] frontBytes, byte[] backBytes, boolean isPdf,
-                                                         String organizationId, Long apiKeyId) {
+                                                         String organizationId) {
         Mono<String> frontOcr = ocrService.extractText(frontBytes, isPdf);
         Mono<String> backOcr = backBytes != null && backBytes.length > 0
             ? ocrService.extractText(backBytes, isPdf)
@@ -103,7 +105,7 @@ public class AnalyzeDocumentUseCaseImpl implements AnalyzeDocumentUseCase {
                 return aiService.extractDocumentData(combined)
                     .map(geminiFields -> buildAnalysisResponse(tuple.getT1(), tuple.getT2(), geminiFields, combined));
             })
-            .flatMap(response -> logVerification(response, organizationId, apiKeyId).thenReturn(response));
+            .flatMap(response -> logVerification(response, organizationId).thenReturn(response));
     }
 
     private DocumentAnalysisResponse buildAnalysisResponse(String front, String back,
@@ -162,7 +164,7 @@ public class AnalyzeDocumentUseCaseImpl implements AnalyzeDocumentUseCase {
         return response;
     }
 
-    private Mono<Void> logVerification(DocumentAnalysisResponse response, String organizationId, Long apiKeyId) {
+    private Mono<Void> logVerification(DocumentAnalysisResponse response, String organizationId) {
         String additionalFieldsJson = null;
         if (response.getAdditionalFields() != null && !response.getAdditionalFields().isEmpty()) {
             try { additionalFieldsJson = objectMapper.writeValueAsString(response.getAdditionalFields()); }
@@ -172,7 +174,7 @@ public class AnalyzeDocumentUseCaseImpl implements AnalyzeDocumentUseCase {
         String reason = Boolean.TRUE.equals(response.getIsValid()) ? null : response.getValidationMessage();
 
         VerificationLog logEntry = VerificationLog.builder()
-            .platformId(organizationId).apiKeyId(apiKeyId).date(LocalDateTime.now())
+            .platformId(organizationId).date(LocalDateTime.now())
             .docType(response.getDocumentType()).status(status).reason(reason)
             .confidence(response.getConfidenceScore()).processingTimeMs(1500)
             .documentNumber(response.getDocumentNumber()).holderName(response.getHolderName())
@@ -182,7 +184,14 @@ public class AnalyzeDocumentUseCaseImpl implements AnalyzeDocumentUseCase {
             .additionalFields(additionalFieldsJson)
             .build();
 
-        return verificationLogRepository.save(logEntry).then();
+        return verificationLogRepository.save(logEntry)
+            .doOnSuccess(saved -> {
+                meterRegistry.counter("verifid.documents.analyzed",
+                        "status", status,
+                        "organizationId", organizationId != null ? organizationId : "unknown")
+                    .increment();
+            })
+            .then();
     }
 
     private String buildHolderName(Map<String, String> fields) {

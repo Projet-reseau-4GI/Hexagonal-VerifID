@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import com.projects.application.port.out.AuthGatewayPort;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 
 /**
  * Adaptateur HTTP vers le kernel-core et l'auth-core du Kernel RT-Comops.
@@ -31,8 +32,9 @@ import com.projects.application.port.out.AuthGatewayPort;
 public class KernelAuthService implements AuthGatewayPort {
 
     private static final String CLIENT_APP_ENDPOINT    = "/api/kernel/client-applications";
+    private static final String AUTH_IDENTIFY_ENDPOINT = "/api/auth/identify";
     private static final String AUTH_LOGIN_ENDPOINT    = "/api/auth/login";
-    private static final String AUTH_DISCOVER_ENDPOINT = "/api/auth/discover-login-contexts";
+    private static final String AUTH_DISCOVER_ENDPOINT = "/api/auth/discover-contexts";
 
     private final WebClient kernelWebClient;
     private final KernelClientProperties kernelProperties;
@@ -53,6 +55,7 @@ public class KernelAuthService implements AuthGatewayPort {
      * @return Réponse du kernel avec clientId et secret
      */
     @Override
+    @CircuitBreaker(name = "kernel-api", fallbackMethod = "fallbackRegisterClientApplication")
     public Mono<ClientAppRegistrationDTO> registerClientApplication(
             String adminBearerToken,
             UUID tenantId) {
@@ -91,27 +94,41 @@ public class KernelAuthService implements AuthGatewayPort {
     }
 
     /**
-     * Authentifie un utilisateur via l'auth-core du kernel.
-     * Utilisé quand VerifID délègue l'authentification au kernel.
-     *
-     * @param tenantId  UUID du tenant
-     * @param principal Email ou username
-     * @param password  Mot de passe en clair
-     * @return JWT RS256 et informations du compte utilisateur
+     * Étape 1 : Demande au Kernel d'envoyer un OTP à cet email.
      */
     @Override
-    public Mono<AuthLoginDTO> loginUser(UUID tenantId, String principal, String password) {
+    @CircuitBreaker(name = "kernel-api", fallbackMethod = "fallbackInitiateOtp")
+    public Mono<Void> initiateOtp(String email) {
+        Map<String, Object> body = Map.of("principal", email);
+
+        return kernelWebClient.post()
+                .uri(AUTH_IDENTIFY_ENDPOINT)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(Void.class)
+                .doOnSuccess(r -> log.info("[auth-core] OTP demandé avec succès pour : {}", email))
+                .doOnError(e -> log.error("[auth-core] Erreur lors de la demande d'OTP : {}", e.getMessage()));
+    }
+
+    /**
+     * Étape 2 : Vérifie l'OTP (comme password) auprès du Kernel et récupère le profil (UserAccountResponse).
+     */
+    @Override
+    @CircuitBreaker(name = "kernel-api", fallbackMethod = "fallbackVerifyOtpAndLogin")
+    public Mono<AuthLoginDTO> verifyOtpAndLogin(String email, String otpCode, UUID tenantId) {
         Map<String, Object> body = Map.of(
-                "tenantId", tenantId.toString(),
-                "principal", principal,
-                "password", password
+                "principal", email,
+                "password", otpCode
         );
 
         return kernelWebClient.post()
                 .uri(AUTH_LOGIN_ENDPOINT)
                 .headers(h -> {
                     h.setContentType(MediaType.APPLICATION_JSON);
-                    h.set("X-Tenant-Id", tenantId.toString());
+                    if (tenantId != null) {
+                        h.set("X-Tenant-Id", tenantId.toString());
+                    }
                 })
                 .bodyValue(body)
                 .retrieve()
@@ -124,19 +141,19 @@ public class KernelAuthService implements AuthGatewayPort {
                                 parseString(d, "refreshToken"),
                                 parseUuid(d, "userId"),
                                 parseString(d, "email"),
-                                parseString(d, "status")
+                                parseString(d, "username"),
+                                parseString(d, "plan"),
+                                parseOrganizations(d.get("organizations"))
                         );
                     }
                     throw new IllegalStateException("Réponse auth-core inattendue");
                 })
-                .doOnError(e -> log.error("[auth-core] Erreur login utilisateur : {}", e.getMessage()));
+                .doOnError(e -> log.error("[auth-core] Erreur vérification OTP pour {} : {}", email, e.getMessage()));
     }
 
     /**
      * Découvre les contextes de login disponibles pour un email donné.
-     * Correspond à DS-AU-07 du rapport.
      */
-    @Override
     public Mono<Map<String, Object>> discoverLoginContexts(String email) {
         Map<String, Object> body = Map.of("email", email);
 
@@ -161,5 +178,37 @@ public class KernelAuthService implements AuthGatewayPort {
     private String parseString(Map<?, ?> map, String key) {
         Object val = map.get(key);
         return val != null ? val.toString() : null;
+    }
+
+    private java.util.List<OrgRef> parseOrganizations(Object orgsObj) {
+        if (!(orgsObj instanceof java.util.List<?> list)) return java.util.List.of();
+        
+        return list.stream()
+                .filter(o -> o instanceof Map<?, ?>)
+                .map(o -> (Map<?, ?>) o)
+                .map(m -> new OrgRef(
+                        parseUuid(m, "organizationId"),
+                        parseString(m, "shortName"),
+                        parseString(m, "displayName")
+                ))
+                .toList();
+    }
+
+    // Fallbacks Resilience4j
+    // ----------------------------------------------------------------
+
+    public Mono<ClientAppRegistrationDTO> fallbackRegisterClientApplication(String adminBearerToken, UUID tenantId, Throwable t) {
+        log.error("[kernel-core] Circuit Breaker ouvert ou erreur Kernel pour registerClientApplication (tenant={}). Erreur: {}", tenantId, t.getMessage());
+        return Mono.error(new IllegalStateException("Service Kernel indisponible. Impossible d'enregistrer l'application."));
+    }
+
+    public Mono<Void> fallbackInitiateOtp(String email, Throwable t) {
+        log.error("[auth-core] Circuit Breaker ouvert ou erreur Kernel pour initiateOtp (email={}). Erreur: {}", email, t.getMessage());
+        return Mono.error(new IllegalStateException("Service d'authentification indisponible. Impossible d'envoyer l'OTP."));
+    }
+
+    public Mono<AuthLoginDTO> fallbackVerifyOtpAndLogin(String email, String otpCode, UUID tenantId, Throwable t) {
+        log.error("[auth-core] Circuit Breaker ouvert ou erreur Kernel pour verifyOtpAndLogin (email={}). Erreur: {}", email, t.getMessage());
+        return Mono.error(new IllegalStateException("Service d'authentification indisponible. Impossible de valider l'OTP."));
     }
 }

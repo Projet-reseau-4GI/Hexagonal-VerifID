@@ -15,6 +15,7 @@ import reactor.core.publisher.Mono;
 import java.util.Map;
 import java.util.UUID;
 import com.projects.application.port.out.FileStoragePort;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 
 /**
  * Adaptateur HTTP vers le file-core du Kernel RT-Comops.
@@ -53,6 +54,7 @@ public class KernelFileService implements FileStoragePort {
      * @return Métadonnées du fichier stocké (StoredFileResponse)
      */
     @Override
+    @CircuitBreaker(name = "kernel-api")
     public Mono<StoredFileDTO> storeFile(
             String fileName,
             String contentType,
@@ -81,6 +83,7 @@ public class KernelFileService implements FileStoragePort {
     }
 
     @Override
+    @CircuitBreaker(name = "kernel-api")
     public Mono<byte[]> downloadContent(UUID fileId, UUID tenantId, UUID orgId) {
         return kernelWebClient.get()
                 .uri(FILES_ENDPOINT + "/" + fileId + "/content")
@@ -95,6 +98,7 @@ public class KernelFileService implements FileStoragePort {
     /**
      * Récupère les métadonnées d'un fichier depuis le file-core.
      */
+    @CircuitBreaker(name = "kernel-api")
     public Mono<StoredFileDTO> getFileMetadata(UUID fileId, UUID tenantId, UUID orgId, String bearerToken) {
         return kernelWebClient.get()
                 .uri(FILES_ENDPOINT + "/" + fileId)

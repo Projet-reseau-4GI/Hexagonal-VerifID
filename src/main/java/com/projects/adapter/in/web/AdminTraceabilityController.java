@@ -1,8 +1,8 @@
 package com.projects.adapter.in.web;
 
-import com.projects.application.port.out.OrganizationApiKeyRepositoryPort;
+import com.projects.application.port.out.OrganizationRepositoryPort;
 import com.projects.application.port.out.VerificationLogRepositoryPort;
-import com.projects.domain.model.OrganizationApiKey;
+import com.projects.domain.model.Organization;
 import com.projects.domain.model.VerificationLog;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -34,58 +34,63 @@ import java.time.LocalDateTime;
 @Tag(name = "Admin Traceability", description = "Super-Admin : traçabilité des clés API et vérifications par organisation")
 public class AdminTraceabilityController {
 
-    private final OrganizationApiKeyRepositoryPort apiKeyRepository;
+    private final OrganizationRepositoryPort organizationRepository;
     private final VerificationLogRepositoryPort verificationLogRepository;
 
     // ─── API KEYS ────────────────────────────────────────────────────────────
 
-    @GetMapping("/organizations/{orgId}/api-keys")
-    @Operation(summary = "Lister toutes les clés API d'une organisation")
-    public Flux<ApiKeyResponse> listApiKeys(@PathVariable String orgId) {
-        return apiKeyRepository.findByOrganizationId(orgId)
-                .map(k -> new ApiKeyResponse(
-                        k.getId(),
-                        k.getOrganizationId(),
-                        k.getLabel(),
-                        k.getActive(),
-                        k.getCreatedAt()
-                ));
+    @GetMapping("/organizations/{orgId}/api-key")
+    @Operation(summary = "Afficher la clé API d'une organisation")
+    public Mono<ResponseEntity<ApiKeyResponse>> getApiKey(@PathVariable String orgId) {
+        return organizationRepository.findById(java.util.UUID.fromString(orgId))
+                .filter(org -> org.getApiKeyHash() != null)
+                .map(org -> ResponseEntity.ok(new ApiKeyResponse(
+                        org.getId().toString(),
+                        org.getApiKeyLabel(),
+                        org.getApiKeyActive(),
+                        org.getApiKeyCreatedAt()
+                )))
+                .defaultIfEmpty(ResponseEntity.notFound().build());
     }
 
-    @PostMapping("/organizations/{orgId}/api-keys")
-    @Operation(summary = "Créer une nouvelle clé API pour une organisation")
-    public Mono<ResponseEntity<ApiKeyCreatedResponse>> createApiKey(
+    @PostMapping("/organizations/{orgId}/api-key")
+    @Operation(summary = "Générer une nouvelle clé API pour une organisation (écrase l'ancienne)")
+    public Mono<ResponseEntity<ApiKeyCreatedResponse>> generateApiKey(
             @PathVariable String orgId,
             @RequestBody CreateApiKeyRequest request) {
 
-        // Generate a secure random API key
-        String rawKey = "vfid_" + java.util.UUID.randomUUID().toString().replace("-", "");
-        String hashedKey = com.projects.adapter.out.security.SecurityUtils.hashApiKey(rawKey);
+        return organizationRepository.findById(java.util.UUID.fromString(orgId))
+                .flatMap(org -> {
+                    String rawKey = "vfid_" + java.util.UUID.randomUUID().toString().replace("-", "");
+                    String hashedKey = com.projects.adapter.out.security.SecurityUtils.hashApiKey(rawKey);
 
-        OrganizationApiKey apiKey = OrganizationApiKey.builder()
-                .organizationId(orgId)
-                .apiKeyHash(hashedKey)
-                .label(request.label() != null ? request.label() : "Clé API")
-                .active(true)
-                .createdAt(LocalDateTime.now())
-                .build();
+                    org.setApiKeyHash(hashedKey);
+                    org.setApiKeyLabel(request.label() != null ? request.label() : "Clé API");
+                    org.setApiKeyActive(true);
+                    org.setApiKeyCreatedAt(LocalDateTime.now());
 
-        return apiKeyRepository.save(apiKey)
-                .map(saved -> ResponseEntity.status(HttpStatus.CREATED)
-                        .body(new ApiKeyCreatedResponse(
-                                saved.getId(),
-                                saved.getOrganizationId(),
-                                saved.getLabel(),
-                                rawKey, // Only returned ONCE at creation
-                                saved.getCreatedAt()
-                        )));
+                    return organizationRepository.save(org)
+                            .map(saved -> ResponseEntity.status(HttpStatus.CREATED)
+                                    .body(new ApiKeyCreatedResponse(
+                                            saved.getId().toString(),
+                                            saved.getApiKeyLabel(),
+                                            rawKey,
+                                            saved.getApiKeyCreatedAt()
+                                    )));
+                })
+                .switchIfEmpty(Mono.just(ResponseEntity.notFound().build()));
     }
 
-    @DeleteMapping("/api-keys/{keyId}/deactivate")
-    @Operation(summary = "Révoquer (désactiver) une clé API")
-    public Mono<ResponseEntity<String>> deactivateApiKey(@PathVariable Long keyId) {
-        return apiKeyRepository.deactivate(keyId)
-                .thenReturn(ResponseEntity.ok("Clé API " + keyId + " désactivée avec succès."));
+    @DeleteMapping("/organizations/{orgId}/api-key/deactivate")
+    @Operation(summary = "Désactiver la clé API d'une organisation")
+    public Mono<ResponseEntity<String>> deactivateApiKey(@PathVariable String orgId) {
+        return organizationRepository.findById(java.util.UUID.fromString(orgId))
+                .flatMap(org -> {
+                    org.setApiKeyActive(false);
+                    return organizationRepository.save(org);
+                })
+                .map(org -> ResponseEntity.ok("Clé API désactivée avec succès pour l'organisation " + orgId))
+                .switchIfEmpty(Mono.just(ResponseEntity.notFound().build()));
     }
 
     // ─── VERIFICATION LOGS ───────────────────────────────────────────────────
@@ -100,12 +105,7 @@ public class AdminTraceabilityController {
                 .map(this::toResponse);
     }
 
-    @GetMapping("/api-keys/{keyId}/verifications")
-    @Operation(summary = "Lister tous les logs de vérification associés à une clé API spécifique")
-    public Flux<VerificationLogResponse> getApiKeyVerifications(@PathVariable Long keyId) {
-        return verificationLogRepository.findByApiKeyId(keyId)
-                .map(this::toResponse);
-    }
+
 
     @GetMapping("/organizations/{orgId}/stats")
     @Operation(summary = "Statistiques rapides d'une organisation (admin)")
@@ -114,13 +114,14 @@ public class AdminTraceabilityController {
         return Mono.zip(
                 verificationLogRepository.countByPlatformIdAndDateAfter(orgId, startOfDay),
                 verificationLogRepository.findByPlatformId(orgId).count(),
-                apiKeyRepository.findByOrganizationId(orgId)
-                        .filter(k -> Boolean.TRUE.equals(k.getActive())).count()
+                organizationRepository.findById(java.util.UUID.fromString(orgId))
+                        .map(org -> Boolean.TRUE.equals(org.getApiKeyActive()) ? 1L : 0L)
+                        .defaultIfEmpty(0L)
         ).map(tuple -> new OrgStatsResponse(
                 orgId,
                 tuple.getT1(),   // verifications today
                 tuple.getT2(),   // total verifications
-                tuple.getT3()    // active API keys
+                tuple.getT3()    // active API keys (0 or 1)
         ));
     }
 
@@ -141,7 +142,6 @@ public class AdminTraceabilityController {
         return new VerificationLogResponse(
                 log.getId(),
                 log.getPlatformId(),
-                log.getApiKeyId(),
                 log.getDate(),
                 log.getDocType(),
                 log.getStatus(),
@@ -156,7 +156,6 @@ public class AdminTraceabilityController {
     }
 
     public record ApiKeyResponse(
-            Long id,
             String organizationId,
             String label,
             Boolean active,
@@ -164,7 +163,6 @@ public class AdminTraceabilityController {
     ) {}
 
     public record ApiKeyCreatedResponse(
-            Long id,
             String organizationId,
             String label,
             String rawApiKey,
@@ -183,7 +181,6 @@ public class AdminTraceabilityController {
     public record VerificationLogResponse(
             Long id,
             String organizationId,
-            Long apiKeyId,
             LocalDateTime date,
             String docType,
             String status,

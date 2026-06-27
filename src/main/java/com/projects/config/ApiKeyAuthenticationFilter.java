@@ -1,7 +1,7 @@
 package com.projects.config;
 
 import com.projects.adapter.out.security.SecurityUtils;
-import com.projects.application.port.out.OrganizationApiKeyRepositoryPort;
+import com.projects.application.port.out.OrganizationRepositoryPort;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -19,7 +19,7 @@ public class ApiKeyAuthenticationFilter implements WebFilter {
 
     private static final String API_KEY_HEADER = "X-API-KEY";
 
-    private final OrganizationApiKeyRepositoryPort apiKeyRepository;
+    private final OrganizationRepositoryPort apiKeyRepository;
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
@@ -43,12 +43,11 @@ public class ApiKeyAuthenticationFilter implements WebFilter {
         String hashedApiKey = SecurityUtils.hashApiKey(apiKey);
 
         return apiKeyRepository.findByApiKeyHash(hashedApiKey)
-                .filter(key -> Boolean.TRUE.equals(key.getActive()))
+                .filter(key -> Boolean.TRUE.equals(key.getApiKeyActive()))
                 .flatMap(key ->
                      chain.filter(exchange)
                           .contextWrite(ctx -> ReactiveTenantContext
-                              .putOrganizationId(ctx, key.getOrganizationId())
-                              .put(ReactiveTenantContext.API_KEY_ID_KEY, key.getId()))
+                              .putOrganizationId(ctx, key.getId().toString()))
                 )
                 .switchIfEmpty(Mono.defer(() -> {
                     exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);

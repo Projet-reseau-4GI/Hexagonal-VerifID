@@ -43,9 +43,4 @@ public class VerificationLogRepositoryAdapter implements VerificationLogReposito
     public Flux<VerificationLog> findByPlatformId(String platformId) {
         return repository.findByPlatformId(platformId).map(mapper::toDomain);
     }
-
-    @Override
-    public Flux<VerificationLog> findByApiKeyId(Long apiKeyId) {
-        return repository.findByApiKeyId(apiKeyId).map(mapper::toDomain);
-    }
 }

@@ -18,7 +18,4 @@ public interface VerificationLogR2dbcRepository extends ReactiveCrudRepository<V
 
     @Query("SELECT * FROM verification_logs WHERE platform_id = :platformId ORDER BY date DESC")
     Flux<VerificationLogEntity> findByPlatformId(String platformId);
-
-    @Query("SELECT * FROM verification_logs WHERE api_key_id = :apiKeyId ORDER BY date DESC")
-    Flux<VerificationLogEntity> findByApiKeyId(Long apiKeyId);
 }

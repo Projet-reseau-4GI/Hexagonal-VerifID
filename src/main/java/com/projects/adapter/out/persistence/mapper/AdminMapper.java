@@ -13,6 +13,7 @@ public class AdminMapper {
         }
         return Admin.builder()
                 .id(entity.getId())
+                .name(entity.getName())
                 .email(entity.getEmail())
                 .passwordHash(entity.getPasswordHash())
                 .role(entity.getRole())
@@ -29,6 +30,7 @@ public class AdminMapper {
         }
         return AdminEntity.builder()
                 .id(domain.getId())
+                .name(domain.getName())
                 .email(domain.getEmail())
                 .passwordHash(domain.getPasswordHash())
                 .role(domain.getRole())
