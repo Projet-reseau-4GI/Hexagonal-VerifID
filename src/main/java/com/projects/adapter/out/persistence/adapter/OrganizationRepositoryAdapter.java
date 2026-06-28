@@ -24,11 +24,19 @@ import java.util.UUID;
 public class OrganizationRepositoryAdapter implements OrganizationRepositoryPort {
 
     private final OrganizationR2dbcRepository repository;
+    private final org.springframework.data.r2dbc.core.R2dbcEntityTemplate template;
 
     @Override
     public Mono<Organization> save(Organization organization) {
         OrganizationEntity entity = toEntity(organization);
-        return repository.save(entity)
+        return repository.existsById(entity.getId())
+                .flatMap(exists -> {
+                    if (exists) {
+                        return template.update(entity);
+                    } else {
+                        return template.insert(entity);
+                    }
+                })
                 .map(this::toDomain)
                 .doOnSuccess(o -> log.debug("[org-db] Organisation sauvegardée : id={}", o.getId()))
                 .doOnError(e -> log.error("[org-db] Erreur save org id={} : {}", organization.getId(), e.getMessage()));

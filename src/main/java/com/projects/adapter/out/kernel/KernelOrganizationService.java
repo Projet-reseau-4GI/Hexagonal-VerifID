@@ -128,20 +128,7 @@ public class KernelOrganizationService implements OrganizationGatewayPort {
                 .doOnError(e -> log.error("[org-core] Erreur récupération org={} : {}", orgId, e.getMessage()));
     }
 
-    /**
-     * Demande la mise à jour du forfait d'une organisation via organization-core.
-     */
-    @Override
-    @CircuitBreaker(name = "kernel-api", fallbackMethod = "fallbackUpgradeOrganizationPlan")
-    public Mono<Void> upgradeOrganizationPlan(UUID tenantId, UUID orgId, String newPlan) {
-        return kernelWebClient.put()
-                .uri(ORGANIZATIONS_BASE + "/" + orgId + "/plan")
-                .headers(h -> applyKernelHeaders(h, tenantId, orgId, null))
-                .bodyValue(Map.of("plan", newPlan))
-                .retrieve()
-                .bodyToMono(Void.class)
-                .doOnError(e -> log.error("[org-core] Erreur mise à jour plan pour org={} : {}", orgId, e.getMessage()));
-    }
+
 
     // Utilitaires
     // ----------------------------------------------------------------
@@ -200,8 +187,4 @@ public class KernelOrganizationService implements OrganizationGatewayPort {
         return Mono.error(new IllegalStateException("Service Kernel indisponible. Impossible de rechercher l'organisation."));
     }
 
-    public Mono<Void> fallbackUpgradeOrganizationPlan(UUID tenantId, UUID orgId, String newPlan, Throwable t) {
-        log.error("[org-core] Circuit Breaker ouvert ou erreur Kernel pour upgradeOrganizationPlan (org={}). Erreur: {}", orgId, t.getMessage());
-        return Mono.error(new IllegalStateException("Service Kernel indisponible. Impossible de mettre à jour le forfait."));
-    }
 }

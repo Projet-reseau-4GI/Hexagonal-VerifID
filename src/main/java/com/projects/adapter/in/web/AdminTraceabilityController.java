@@ -15,6 +15,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 /**
  * Admin / Super-Admin controller for API Key traceability.
@@ -100,7 +101,7 @@ public class AdminTraceabilityController {
     public Flux<VerificationLogResponse> getOrgVerifications(
             @PathVariable String orgId,
             @RequestParam(required = false) String status) {
-        return verificationLogRepository.findByPlatformId(orgId)
+        return verificationLogRepository.findByPlatformId(UUID.fromString(orgId))
                 .filter(log -> status == null || status.equalsIgnoreCase(log.getStatus()))
                 .map(this::toResponse);
     }
@@ -112,8 +113,8 @@ public class AdminTraceabilityController {
     public Mono<OrgStatsResponse> getOrgStats(@PathVariable String orgId) {
         LocalDateTime startOfDay = LocalDateTime.now().with(java.time.LocalTime.MIN);
         return Mono.zip(
-                verificationLogRepository.countByPlatformIdAndDateAfter(orgId, startOfDay),
-                verificationLogRepository.findByPlatformId(orgId).count(),
+                verificationLogRepository.countByPlatformIdAndDateAfter(UUID.fromString(orgId), startOfDay),
+                verificationLogRepository.findByPlatformId(UUID.fromString(orgId)).count(),
                 organizationRepository.findById(java.util.UUID.fromString(orgId))
                         .map(org -> Boolean.TRUE.equals(org.getApiKeyActive()) ? 1L : 0L)
                         .defaultIfEmpty(0L)

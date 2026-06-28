@@ -6,6 +6,7 @@ import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 /**
  * R2DBC persistence entity for VerificationLog.
@@ -18,7 +19,7 @@ import java.time.LocalDateTime;
 public class VerificationLogEntity {
 
     @Id private Long id;
-    @Column("platform_id") private String platformId;
+    @Column("platform_id") private UUID platformId;
     @Column("date") private LocalDateTime date;
     @Column("doc_type") private String docType;
     @Column("status") private String status;

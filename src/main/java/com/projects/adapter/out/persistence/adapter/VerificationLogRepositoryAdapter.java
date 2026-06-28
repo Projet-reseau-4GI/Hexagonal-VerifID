@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import java.util.UUID;
 
 /**
  * Outbound adapter — implements VerificationLogRepositoryPort using Spring Data R2DBC.
@@ -35,12 +36,12 @@ public class VerificationLogRepositoryAdapter implements VerificationLogReposito
     }
 
     @Override
-    public Mono<Long> countByPlatformIdAndDateAfter(String platformId, java.time.LocalDateTime date) {
+    public Mono<Long> countByPlatformIdAndDateAfter(UUID platformId, java.time.LocalDateTime date) {
         return repository.countByPlatformIdAndDateAfter(platformId, date);
     }
 
     @Override
-    public Flux<VerificationLog> findByPlatformId(String platformId) {
+    public Flux<VerificationLog> findByPlatformId(UUID platformId) {
         return repository.findByPlatformId(platformId).map(mapper::toDomain);
     }
 }

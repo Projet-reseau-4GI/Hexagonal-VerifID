@@ -3,6 +3,7 @@ package com.projects.adapter.out.persistence.mapper;
 import com.projects.domain.model.VerificationLog;
 import com.projects.adapter.out.persistence.entity.VerificationLogEntity;
 import org.springframework.stereotype.Component;
+import java.util.UUID;
 
 /**
  * Mapper: VerificationLog domain model ↔ VerificationLogEntity (R2DBC).
@@ -14,7 +15,7 @@ public class VerificationLogMapper {
         if (entity == null) return null;
         return VerificationLog.builder()
             .id(entity.getId())
-            .platformId(entity.getPlatformId())
+            .platformId(entity.getPlatformId() != null ? entity.getPlatformId().toString() : null)
             .date(entity.getDate())
             .docType(entity.getDocType())
             .status(entity.getStatus())
@@ -34,7 +35,7 @@ public class VerificationLogMapper {
         if (domain == null) return null;
         return VerificationLogEntity.builder()
             .id(domain.getId())
-            .platformId(domain.getPlatformId())
+            .platformId(domain.getPlatformId() != null ? UUID.fromString(domain.getPlatformId()) : null)
             .date(domain.getDate())
             .docType(domain.getDocType())
             .status(domain.getStatus())

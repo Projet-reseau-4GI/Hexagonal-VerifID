@@ -184,6 +184,13 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- Reactor Test -->
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- Actuator pour healthcheck -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

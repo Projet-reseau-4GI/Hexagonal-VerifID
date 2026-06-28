@@ -37,10 +37,6 @@ public interface OrganizationGatewayPort {
      */
     Mono<Boolean> isSubscribedToService(UUID tenantId, UUID orgId, String serviceCode, String bearerToken);
 
-    /**
-     * Demande la mise à jour du plan d'une organisation dans le Kernel.
-     */
-    Mono<Void> upgradeOrganizationPlan(UUID tenantId, UUID orgId, String newPlan);
 
     // ── DTO ─────────────────────────────────────────────────────────────────────
 

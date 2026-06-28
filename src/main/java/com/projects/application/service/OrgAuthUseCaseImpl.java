@@ -29,13 +29,17 @@ public class OrgAuthUseCaseImpl implements OrgAuthUseCase {
         String email = request.getEmail();
         log.info("[org-auth] Initiation de l'authentification pour : {}", email);
 
-        // On lance en parallèle la recherche de l'organisation et la demande d'OTP.
-        // Si l'organisation n'existe pas dans le Kernel, la méthode search renverra Mono.empty(),
-        // ce qui produira une erreur via switchIfEmpty.
-        return orgGateway.searchOrganizationByEmail(email, null)
+        // On cherche d'abord en base locale (notre cache VerifID persistant).
+        // Si elle n'y est pas, on interroge le Kernel.
+        return organizationRepository.findByEmail(email)
+                .map(org -> true)
+                .switchIfEmpty(
+                        orgGateway.searchOrganizationByEmail(email, null)
+                                .map(orgSummary -> true)
+                )
                 .switchIfEmpty(Mono.error(new RuntimeException("Organisation introuvable pour cet email")))
-                .flatMap(orgSummary -> {
-                    log.info("[org-auth] Organisation trouvée dans le Kernel : {} ({})", orgSummary.displayName(), orgSummary.id());
+                .flatMap(found -> {
+                    log.info("[org-auth] Organisation trouvée pour : {}", email);
                     return authGateway.initiateOtp(email);
                 });
     }
