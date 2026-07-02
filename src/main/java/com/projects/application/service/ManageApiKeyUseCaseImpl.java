@@ -30,7 +30,7 @@ public class ManageApiKeyUseCaseImpl implements ManageApiKeyUseCase {
                     // Générer une clé brute (ex: vf_live_xxxx)
                     byte[] randomBytes = new byte[32];
                     secureRandom.nextBytes(randomBytes);
-                    String rawApiKey = "verify_" + Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
+                    String rawApiKey = "vf_id_" + Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
 
                     // Hasher la clé
                     String hashedKey = SecurityUtils.hashApiKey(rawApiKey);

@@ -19,7 +19,7 @@ public class CheckQuotaUseCaseImpl implements CheckQuotaUseCase {
     private final com.projects.application.port.out.OrganizationRepositoryPort organizationRepositoryPort;
     private final VerificationLogRepositoryPort verificationLogRepositoryPort;
 
-    private static final int FREEMIUM_LIMIT = 20;
+    private static final int FREEMIUM_LIMIT = 2;
 
     @Override
     public Mono<Boolean> isQuotaAvailable(String organizationId) {
