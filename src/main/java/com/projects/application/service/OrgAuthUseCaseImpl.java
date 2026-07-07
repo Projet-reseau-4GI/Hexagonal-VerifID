@@ -3,6 +3,7 @@ package com.projects.application.service;
 import com.projects.adapter.in.web.dto.*;
 import com.projects.application.port.in.OrgAuthUseCase;
 import com.projects.application.port.out.EmailServicePort;
+import com.projects.application.port.out.KernelAuthPort;
 import com.projects.application.port.out.OrganizationRepositoryPort;
 import com.projects.application.service.admin.LocalJwtService;
 import com.projects.domain.model.Organization;
@@ -34,6 +35,7 @@ public class OrgAuthUseCaseImpl implements OrgAuthUseCase {
     private final EmailServicePort emailService;
     private final LocalJwtService jwtService;
     private final BCryptPasswordEncoder passwordEncoder;
+    private final KernelAuthPort kernelAuthPort;
 
     // ─────────────────────────────────────────────────────────────────────────
     // INSCRIPTION
@@ -196,6 +198,75 @@ public class OrgAuthUseCaseImpl implements OrgAuthUseCase {
 
                     return organizationRepository.save(org)
                             .map(saved -> buildAuthResponse(saved, jwtService.generateToken(saved.getEmail(), "ORG")));
+                });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // TWIN AUTHENTICATION (KERNEL)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Override
+    public Mono<TwinAuthStep1Response> kernelLogin(KernelLoginRequest request) {
+        String email = request.getEmail().toLowerCase().trim();
+        log.info("[auth] Tentative de connexion via KSM Kernel pour email={}", email);
+
+        return kernelAuthPort.login(email, request.getPassword())
+                .flatMap(tokenResponse -> {
+                    String kernelToken = tokenResponse.getAccessToken();
+                    return kernelAuthPort.getMyOrganizations(kernelToken)
+                            .map(orgs -> TwinAuthStep1Response.builder()
+                                    .kernelToken(kernelToken)
+                                    .availableOrganizations(orgs)
+                                    .build());
+                })
+                .onErrorMap(ex -> new RuntimeException("Échec de l'authentification Kernel: " + ex.getMessage()));
+    }
+
+    @Override
+    public Mono<OrgAuthResponse> selectOrganization(SelectOrgRequest request) {
+        log.info("[auth] Sélection de l'organisation via Twin Authentication pour orgId={}", request.getOrganizationId());
+        
+        // 1. Récupérer les orgs du user via son token Kernel pour valider l'appartenance
+        return kernelAuthPort.getMyOrganizations(request.getKernelToken())
+                .flatMap(orgs -> {
+                    var selectedOrgOpt = orgs.stream()
+                            .filter(o -> o.getId().equals(request.getOrganizationId()))
+                            .findFirst();
+
+                    if (selectedOrgOpt.isEmpty()) {
+                        return Mono.error(new IllegalStateException("L'utilisateur n'appartient pas à cette organisation."));
+                    }
+
+                    var kernelOrg = selectedOrgOpt.get();
+
+                    // 2. Synchroniser ou récupérer l'organisation localement
+                    return organizationRepository.findById(kernelOrg.getId())
+                            .switchIfEmpty(Mono.defer(() -> {
+                                log.info("[auth] Synchronisation de la nouvelle organisation depuis le Kernel : {}", kernelOrg.getId());
+                                Organization newOrg = Organization.builder()
+                                        .id(kernelOrg.getId())
+                                        .email(kernelOrg.getEmail() != null ? kernelOrg.getEmail() : "no-email@kernel.com")
+                                        .name(kernelOrg.getShortName() != null ? kernelOrg.getShortName() : "Org")
+                                        .displayName(kernelOrg.getDisplayName() != null ? kernelOrg.getDisplayName() : kernelOrg.getShortName())
+                                        .logoUri(kernelOrg.getLogoUri())
+                                        .plan("FREEMIUM")
+                                        .status("ACTIVE")
+                                        .isEmailVerified(true) // Déjà vérifié via Kernel
+                                        // On génère un mot de passe local aléatoire car on gère l'auth via Kernel
+                                        .passwordHash(passwordEncoder.encode(UUID.randomUUID().toString())) 
+                                        .clientId("cli-" + UUID.randomUUID().toString().replace("-", "").substring(0, 16))
+                                        .dailyVerificationCount(0)
+                                        .apiKeyActive(false)
+                                        .createdAt(LocalDateTime.now())
+                                        .build();
+                                return organizationRepository.save(newOrg);
+                            }))
+                            .flatMap(localOrg -> {
+                                // 3. Générer le JWT local VerifID pour l'organisation sélectionnée
+                                String localToken = jwtService.generateToken(localOrg.getEmail(), "ORG");
+                                log.info("[auth] Twin Authentication réussie. JWT local généré pour org={}", localOrg.getId());
+                                return Mono.just(buildAuthResponse(localOrg, localToken));
+                            });
                 });
     }
 

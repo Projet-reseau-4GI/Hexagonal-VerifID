@@ -38,7 +38,8 @@ KSM_Kernel_Layer-main/
 rapport Kernel Réseau.pdf
 
 ### Secrets — à gérer explicitement si nécessaire ###
-# src/main/resources/application.properties
-# .env
-# .env.local
-# *.env
+src/main/resources/application.properties
+.env
+.env.local
+*.env
+KSM_Kernel_Layer/

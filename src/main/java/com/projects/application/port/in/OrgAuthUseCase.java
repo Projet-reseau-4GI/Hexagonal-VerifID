@@ -46,4 +46,22 @@ public interface OrgAuthUseCase {
      * existantes.
      */
     Mono<OrgAuthResponse> completeAuth(OrgVerifyOtpRequest request);
+
+    /**
+     * Step 1 of Twin Authentication: Authenticates the user with the KSM Kernel
+     * and returns the Kernel token along with the list of their organizations.
+     *
+     * @param request the Kernel login credentials (email, password).
+     * @return Mono of TwinAuthStep1Response containing the temporary token and organizations.
+     */
+    Mono<TwinAuthStep1Response> kernelLogin(KernelLoginRequest request);
+
+    /**
+     * Step 2 of Twin Authentication: Validates the Kernel token, verifies organization ownership,
+     * synchronizes the organization locally if needed, and issues a local VerifID JWT.
+     *
+     * @param request the Kernel token and selected organization ID.
+     * @return Mono of OrgAuthResponse containing the local session token and organization details.
+     */
+    Mono<OrgAuthResponse> selectOrganization(SelectOrgRequest request);
 }

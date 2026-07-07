@@ -14,7 +14,7 @@ import reactor.core.publisher.Mono;
 /**
  * Contrôleur REST d'authentification des organisations VerifID.
  *
- * Mode autonome : aucune dépendance au Kernel RT-Comops.
+ * Mode autonome (Legacy) et Mode Twin Authentication (Kernel).
  *
  * Flux d'inscription (2 étapes) :
  * POST /api/org/auth/register → enregistre l'org + envoie OTP par email
@@ -85,6 +85,24 @@ public class OrgAuthController {
     @Operation(summary = "Valide l'OTP de réinitialisation et retourne un JWT (compatibilité)")
     public Mono<ResponseEntity<OrgAuthResponse>> verifyOtp(@Valid @RequestBody OrgVerifyOtpRequest request) {
         return orgAuthUseCase.completeAuth(request)
+                .map(ResponseEntity::ok);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // TWIN AUTHENTICATION (KERNEL)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @PostMapping("/kernel-login")
+    @Operation(summary = "Étape 1 (Twin Auth) : Connexion via le KSM Kernel et récupération des organisations")
+    public Mono<ResponseEntity<TwinAuthStep1Response>> kernelLogin(@Valid @RequestBody KernelLoginRequest request) {
+        return orgAuthUseCase.kernelLogin(request)
+                .map(ResponseEntity::ok);
+    }
+
+    @PostMapping("/select-org")
+    @Operation(summary = "Étape 2 (Twin Auth) : Sélection d'une organisation et génération du JWT local VerifID")
+    public Mono<ResponseEntity<OrgAuthResponse>> selectOrganization(@Valid @RequestBody SelectOrgRequest request) {
+        return orgAuthUseCase.selectOrganization(request)
                 .map(ResponseEntity::ok);
     }
 }

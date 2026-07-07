@@ -24,8 +24,9 @@ class OrgAuthUseCaseImplTest {
         EmailServicePort emailService = mock(EmailServicePort.class);
         LocalJwtService jwtService = mock(LocalJwtService.class);
         BCryptPasswordEncoder passwordEncoder = mock(BCryptPasswordEncoder.class);
+        com.projects.application.port.out.KernelAuthPort kernelAuthPort = mock(com.projects.application.port.out.KernelAuthPort.class);
 
-        OrgAuthUseCaseImpl useCase = new OrgAuthUseCaseImpl(organizationRepository, emailService, jwtService, passwordEncoder);
+        OrgAuthUseCaseImpl useCase = new OrgAuthUseCaseImpl(organizationRepository, emailService, jwtService, passwordEncoder, kernelAuthPort);
 
         OrgRegisterRequest request = new OrgRegisterRequest();
         request.setOrganizationName("Test Org");
