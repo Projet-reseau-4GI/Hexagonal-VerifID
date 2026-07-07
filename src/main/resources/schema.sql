@@ -27,6 +27,18 @@ CREATE INDEX IF NOT EXISTS idx_organizations_email ON organizations(email);
 CREATE INDEX IF NOT EXISTS idx_organizations_apikey ON organizations(api_key_hash);
 
 -- =========================================================
+-- Colonnes d'authentification locale (mode autonome, sans Kernel)
+-- =========================================================
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS password_hash    VARCHAR(255);
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS is_email_verified BOOLEAN      DEFAULT FALSE;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS status            VARCHAR(50)  DEFAULT 'PENDING';
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS otp_code          VARCHAR(10);
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS otp_expiry        TIMESTAMP;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS client_id         VARCHAR(64)  UNIQUE;
+
+CREATE INDEX IF NOT EXISTS idx_organizations_client_id ON organizations(client_id);
+
+-- =========================================================
 -- Table : Logs de vérification de documents
 -- platform_id = organization_id (UUID String) de l'appelant
 -- =========================================================

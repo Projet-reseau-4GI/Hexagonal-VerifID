@@ -7,16 +7,41 @@ import lombok.NoArgsConstructor;
 
 import java.util.UUID;
 
+/**
+ * Réponse unifiée après connexion ou inscription complète d'une organisation.
+ * Contient le JWT local (signé par VerifID), le clientId unique et les infos de
+ * l'org.
+ */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class OrgAuthResponse {
 
-    private String token;            // Le JWT retourné par le Kernel
-    private UUID organizationId;     // UUID de l'organisation dans le Kernel
-    private String organizationName; // Nom d'affichage
-    private String email;            // Email de l'utilisateur
-    private String plan;             // Plan (ex: FREEMIUM)
-    private String logoUri;          // Photo de profil / logo
+    /** JWT local VerifID (HS256, durée configurable, sans dépendance au Kernel). */
+    private String token;
+
+    /** UUID interne de l'organisation. */
+    private UUID organizationId;
+
+    /** Nom d'affichage de l'organisation. */
+    private String organizationName;
+
+    /** Email de contact. */
+    private String email;
+
+    /** Plan tarifaire actuel : FREEMIUM, STARTER, PRO. */
+    private String plan;
+
+    /** URL du logo. */
+    private String logoUri;
+
+    /**
+     * Identifiant client unique de l'organisation.
+     * À utiliser pour s'identifier lors des appels API.
+     */
+    private String clientId;
+
+    /** Statut du compte : PENDING, ACTIVE. */
+    private String status;
 }

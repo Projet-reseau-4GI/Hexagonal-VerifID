@@ -44,121 +44,140 @@ public class AnalyzeDocumentUseCaseImpl implements AnalyzeDocumentUseCase {
     private final MeterRegistry meterRegistry;
 
     private static final DateTimeFormatter[] DATE_FORMATTERS = {
-        DateTimeFormatter.ofPattern("dd.MM.yyyy"), DateTimeFormatter.ofPattern("dd/MM/yyyy"),
-        DateTimeFormatter.ofPattern("dd-MM-yyyy"), DateTimeFormatter.ofPattern("yyyy-MM-dd"),
-        DateTimeFormatter.ofPattern("d.MM.yyyy"),  DateTimeFormatter.ofPattern("d/MM/yyyy")
+            DateTimeFormatter.ofPattern("dd.MM.yyyy"), DateTimeFormatter.ofPattern("dd/MM/yyyy"),
+            DateTimeFormatter.ofPattern("dd-MM-yyyy"), DateTimeFormatter.ofPattern("yyyy-MM-dd"),
+            DateTimeFormatter.ofPattern("d.MM.yyyy"), DateTimeFormatter.ofPattern("d/MM/yyyy")
     };
 
     @Override
     public Mono<DocumentAnalysisResponse> analyzeDocument(byte[] frontBytes, byte[] backBytes,
-                                                           String frontFilename, String organizationId) {
+            String frontFilename, String organizationId) {
         boolean isPdf = frontFilename != null && frontFilename.toLowerCase().endsWith(".pdf");
 
         return checkQuotaUseCase.isQuotaAvailable(organizationId)
-            .flatMap(isAvailable -> {
-                if (!isAvailable) {
-                    return Mono.error(new RuntimeException("QUOTA_EXCEEDED: Daily limit reached for this organization."));
-                }
-                return analyzeAndLog(frontBytes, backBytes, isPdf, organizationId)
-                    .flatMap(response -> {
-                        Mono<DocumentAnalysisResponse> resultMono = Mono.just(response);
-                        if (Boolean.TRUE.equals(response.getIsValid())) {
-                            // Upload file to file_core if valid (chemin synchrone REST historique)
-                            Flux<org.springframework.core.io.buffer.DataBuffer> contentFlux = Flux.just(new DefaultDataBufferFactory().wrap(frontBytes));
-                            return fileStoragePort.storeFile(frontFilename, isPdf ? "application/pdf" : "image/jpeg", contentFlux, null, null, null)
-                                    .then(resultMono)
-                                    .onErrorResume(e -> {
-                                        log.error("Failed to upload document to file_core: {}", e.getMessage());
-                                        return resultMono;
-                                    });
-                        }
-                        return resultMono;
-                    });
-            });
+                .flatMap(isAvailable -> {
+                    if (!isAvailable) {
+                        return Mono.error(
+                                new RuntimeException("QUOTA_EXCEEDED: Daily limit reached for this organization."));
+                    }
+                    return analyzeAndLog(frontBytes, backBytes, isPdf, organizationId)
+                            .flatMap(response -> {
+                                Mono<DocumentAnalysisResponse> resultMono = Mono.just(response);
+                                if (Boolean.TRUE.equals(response.getIsValid())) {
+                                    // Upload file to file_core if valid (chemin synchrone REST historique)
+                                    Flux<org.springframework.core.io.buffer.DataBuffer> contentFlux = Flux
+                                            .just(new DefaultDataBufferFactory().wrap(frontBytes));
+                                    return fileStoragePort
+                                            .storeFile(frontFilename, isPdf ? "application/pdf" : "image/jpeg",
+                                                    contentFlux, null, null, null)
+                                            .then(resultMono)
+                                            .onErrorResume(e -> {
+                                                log.error("Failed to upload document to file_core: {}", e.getMessage());
+                                                return resultMono;
+                                            });
+                                }
+                                return resultMono;
+                            });
+                });
     }
 
     @Override
     public Mono<DocumentAnalysisResponse> analyzeStoredDocument(byte[] frontBytes, String frontFilename,
-                                                                String organizationId) {
+            String organizationId) {
         boolean isPdf = frontFilename != null && frontFilename.toLowerCase().endsWith(".pdf");
-        // Le fichier est déjà stocké dans le Kernel (mode asynchrone) → pas de ré-upload.
+        // Le fichier est déjà stocké dans le Kernel (mode asynchrone) → pas de
+        // ré-upload.
         return checkQuotaUseCase.isQuotaAvailable(organizationId)
-            .flatMap(isAvailable -> {
-                if (!isAvailable) {
-                    return Mono.error(new RuntimeException("QUOTA_EXCEEDED: Daily limit reached for this organization."));
-                }
-                return analyzeAndLog(frontBytes, null, isPdf, organizationId);
-            });
+                .flatMap(isAvailable -> {
+                    if (!isAvailable) {
+                        return Mono.error(
+                                new RuntimeException("QUOTA_EXCEEDED: Daily limit reached for this organization."));
+                    }
+                    return analyzeAndLog(frontBytes, null, isPdf, organizationId);
+                });
     }
 
-    /** OCR → IA → validation → enregistrement du log. Commun aux modes synchrone et asynchrone. */
+    /**
+     * OCR → IA → validation → enregistrement du log. Commun aux modes synchrone et
+     * asynchrone.
+     */
     private Mono<DocumentAnalysisResponse> analyzeAndLog(byte[] frontBytes, byte[] backBytes, boolean isPdf,
-                                                         String organizationId) {
+            String organizationId) {
         Mono<String> frontOcr = ocrService.extractText(frontBytes, isPdf);
         Mono<String> backOcr = backBytes != null && backBytes.length > 0
-            ? ocrService.extractText(backBytes, isPdf)
-            : Mono.just("");
+                ? ocrService.extractText(backBytes, isPdf)
+                : Mono.just("");
 
         return Mono.zip(frontOcr, backOcr)
-            .flatMap(tuple -> {
-                String combined = tuple.getT1() + "\n" + tuple.getT2();
-                return aiService.extractDocumentData(combined)
-                    .map(geminiFields -> buildAnalysisResponse(tuple.getT1(), tuple.getT2(), geminiFields, combined));
-            })
-            .flatMap(response -> logVerification(response, organizationId).thenReturn(response));
+                .flatMap(tuple -> {
+                    String combined = tuple.getT1() + "\n" + tuple.getT2();
+                    return aiService.extractDocumentData(combined)
+                            .map(geminiFields -> buildAnalysisResponse(tuple.getT1(), tuple.getT2(), geminiFields,
+                                    combined));
+                })
+                .flatMap(response -> logVerification(response, organizationId).thenReturn(response));
     }
 
     private DocumentAnalysisResponse buildAnalysisResponse(String front, String back,
-                                                             Map<String, String> geminiFields,
-                                                             String rawCombined) {
+            Map<String, String> geminiFields,
+            String rawCombined) {
         log.info("=== Starting Gemini Document Analysis ===");
         Map<String, String> fields = new HashMap<>(geminiFields);
         String docType = fields.getOrDefault("documentType", "UNKNOWN");
         String issuingCountry = fields.getOrDefault("issuingCountry", "UNKNOWN");
 
         fields.entrySet().removeIf(e -> e.getValue() == null ||
-            e.getValue().equalsIgnoreCase("null") || e.getValue().isBlank());
+                e.getValue().equalsIgnoreCase("null") || e.getValue().isBlank());
 
-        LocalDate birthDate  = parseDate(fields.get("dateOfBirth"));
-        LocalDate issueDate  = parseDate(fields.get("issueDate"));
+        LocalDate birthDate = parseDate(fields.get("dateOfBirth"));
+        LocalDate issueDate = parseDate(fields.get("issueDate"));
         LocalDate expiryDate = parseDate(fields.get("expiryDate"));
 
         String holderName = buildHolderName(fields);
-        boolean namesValid   = fields.get("surname") != null && fields.get("givenNames") != null;
-        boolean isExpired    = expiryDate != null && expiryDate.isBefore(LocalDate.now());
+        boolean namesValid = fields.get("surname") != null && fields.get("givenNames") != null;
+        boolean isExpired = expiryDate != null && expiryDate.isBefore(LocalDate.now());
         boolean hasDocNumber = fields.get("documentNumber") != null;
-        boolean nomencValid  = validateNomenclature(issuingCountry, docType, fields.get("documentNumber"));
+        boolean nomencValid = validateNomenclature(issuingCountry, docType, fields.get("documentNumber"));
 
         boolean valid = !isExpired && namesValid && !docType.equals("UNKNOWN") && hasDocNumber && nomencValid;
 
         StringBuilder msg = new StringBuilder();
-        if (valid) { msg.append("Document valide (Analyse Gemini)"); }
-        else {
-            if (docType.equals("UNKNOWN"))      msg.append("Type inconnu. ");
-            if (!namesValid)                    msg.append("Noms manquants. ");
-            if (!hasDocNumber)                  msg.append("Numéro manquant. ");
-            else if (!nomencValid)              msg.append("Format du numéro invalide pour ").append(issuingCountry).append(". ");
-            if (isExpired)                      msg.append("Document expiré. ");
-            if (msg.length() == 0)              msg.append("Document non conforme.");
+        if (valid) {
+            msg.append("Document valide (Analyse Gemini)");
+        } else {
+            if (docType.equals("UNKNOWN"))
+                msg.append("Type inconnu. ");
+            if (!namesValid)
+                msg.append("Noms manquants. ");
+            if (!hasDocNumber)
+                msg.append("Numéro manquant. ");
+            else if (!nomencValid)
+                msg.append("Format du numéro invalide pour ").append(issuingCountry).append(". ");
+            if (isExpired)
+                msg.append("Document expiré. ");
+            if (msg.length() == 0)
+                msg.append("Document non conforme.");
         }
 
         double confidence = 0.9;
-        if (!namesValid || !hasDocNumber) confidence = 0.5;
-        else if (!nomencValid) confidence = 0.6;
+        if (!namesValid || !hasDocNumber)
+            confidence = 0.5;
+        else if (!nomencValid)
+            confidence = 0.6;
 
         DocumentAnalysisResponse response = DocumentAnalysisResponse.builder()
-            .documentType(docType).issuingCountry(issuingCountry)
-            .documentNumber(fields.get("documentNumber")).holderName(holderName)
-            .dateOfBirth(birthDate).issueDate(issueDate).expirationDate(expiryDate)
-            .isValid(valid).validationMessage(msg.toString().trim())
-            .confidenceScore(confidence).hasUncertainty(confidence < 0.6)
-            .additionalFields(buildAdditionalFields(fields)).rawExtractedText(rawCombined)
-            .build();
+                .documentType(docType).issuingCountry(issuingCountry)
+                .documentNumber(fields.get("documentNumber")).holderName(holderName)
+                .dateOfBirth(birthDate).issueDate(issueDate).expirationDate(expiryDate)
+                .isValid(valid).validationMessage(msg.toString().trim())
+                .confidenceScore(confidence).hasUncertainty(confidence < 0.6)
+                .additionalFields(buildAdditionalFields(fields)).rawExtractedText(rawCombined)
+                .build();
 
         Set<ConstraintViolation<DocumentAnalysisResponse>> violations = validator.validate(response);
         if (!violations.isEmpty()) {
-            String summary = violations.stream().map(ConstraintViolation::getMessage)
-                .distinct().collect(Collectors.joining(", "));
+            String summary = violations.stream().map(v -> v.getMessage())
+                    .distinct().collect(Collectors.joining(", "));
             response.setValidationMessage(response.getValidationMessage() + " (Format: " + summary + ")");
         }
         return response;
@@ -167,70 +186,89 @@ public class AnalyzeDocumentUseCaseImpl implements AnalyzeDocumentUseCase {
     private Mono<Void> logVerification(DocumentAnalysisResponse response, String organizationId) {
         String additionalFieldsJson = null;
         if (response.getAdditionalFields() != null && !response.getAdditionalFields().isEmpty()) {
-            try { additionalFieldsJson = objectMapper.writeValueAsString(response.getAdditionalFields()); }
-            catch (JsonProcessingException e) { log.error("Failed to serialize additional fields", e); }
+            try {
+                additionalFieldsJson = objectMapper.writeValueAsString(response.getAdditionalFields());
+            } catch (JsonProcessingException e) {
+                log.error("Failed to serialize additional fields", e);
+            }
         }
         String status = Boolean.TRUE.equals(response.getIsValid()) ? "ACCEPTED" : "REJECTED";
         String reason = Boolean.TRUE.equals(response.getIsValid()) ? null : response.getValidationMessage();
 
         VerificationLog logEntry = VerificationLog.builder()
-            .platformId(organizationId).date(LocalDateTime.now())
-            .docType(response.getDocumentType()).status(status).reason(reason)
-            .confidence(response.getConfidenceScore()).processingTimeMs(1500)
-            .documentNumber(response.getDocumentNumber()).holderName(response.getHolderName())
-            .dateOfBirth(response.getDateOfBirth() != null ? response.getDateOfBirth().toString() : null)
-            .issueDate(response.getIssueDate() != null ? response.getIssueDate().toString() : null)
-            .expiryDate(response.getExpirationDate() != null ? response.getExpirationDate().toString() : null)
-            .additionalFields(additionalFieldsJson)
-            .build();
+                .platformId(organizationId).date(LocalDateTime.now())
+                .docType(response.getDocumentType()).status(status).reason(reason)
+                .confidence(response.getConfidenceScore()).processingTimeMs(1500)
+                .documentNumber(response.getDocumentNumber()).holderName(response.getHolderName())
+                .dateOfBirth(response.getDateOfBirth() != null ? response.getDateOfBirth().toString() : null)
+                .issueDate(response.getIssueDate() != null ? response.getIssueDate().toString() : null)
+                .expiryDate(response.getExpirationDate() != null ? response.getExpirationDate().toString() : null)
+                .additionalFields(additionalFieldsJson)
+                .build();
 
         return verificationLogRepository.save(logEntry)
-            .doOnSuccess(saved -> {
-                meterRegistry.counter("verifid.documents.analyzed",
-                        "status", status,
-                        "organizationId", organizationId != null ? organizationId : "unknown")
-                    .increment();
-            })
-            .then();
+                .doOnSuccess(saved -> {
+                    meterRegistry.counter("verifid.documents.analyzed",
+                            "status", status,
+                            "organizationId", organizationId != null ? organizationId : "unknown")
+                            .increment();
+                })
+                .then();
     }
 
     private String buildHolderName(Map<String, String> fields) {
         String s = fields.get("surname"), g = fields.get("givenNames");
-        if (s != null && g != null) return s.trim() + " " + g.trim();
+        if (s != null && g != null)
+            return s.trim() + " " + g.trim();
         return s != null ? s.trim() : (g != null ? g.trim() : "INCONNU");
     }
 
     private Map<String, String> buildAdditionalFields(Map<String, String> fields) {
         Set<String> topLevel = Set.of("surname", "givenNames", "documentNumber", "dateOfBirth", "issueDate",
-            "expiryDate", "expirationDate", "documentType", "issuingCountry");
+                "expiryDate", "expirationDate", "documentType", "issuingCountry");
         Map<String, String> add = new LinkedHashMap<>();
-        fields.forEach((k, v) -> { if (v != null && !v.isEmpty() && !topLevel.contains(k)) add.put(k, v); });
+        fields.forEach((k, v) -> {
+            if (v != null && !v.isEmpty() && !topLevel.contains(k))
+                add.put(k, v);
+        });
         return add;
     }
 
     private LocalDate parseDate(String dateStr) {
-        if (dateStr == null) return null;
+        if (dateStr == null)
+            return null;
         String clean = dateStr.replaceAll("[^\\d./-]", "").trim();
         for (DateTimeFormatter fmt : DATE_FORMATTERS) {
-            try { return LocalDate.parse(clean, fmt); } catch (Exception ignored) {}
+            try {
+                return LocalDate.parse(clean, fmt);
+            } catch (Exception ignored) {
+            }
         }
         return null;
     }
 
     private boolean validateNomenclature(String country, String docType, String documentNumber) {
-        if (documentNumber == null || documentNumber.isBlank()) return false;
-        if (country == null || country.equalsIgnoreCase("UNKNOWN")) return documentNumber.length() >= 5;
+        if (documentNumber == null || documentNumber.isBlank())
+            return false;
+        if (country == null || country.equalsIgnoreCase("UNKNOWN"))
+            return documentNumber.length() >= 5;
         String nc = country.toLowerCase().trim();
         String nn = documentNumber.replaceAll("[^a-zA-Z0-9]", "");
-        if (nc.contains("gabon")) return nn.length() == 14;
+        if (nc.contains("gabon"))
+            return nn.length() == 14;
         if (nc.contains("cameroun") || nc.contains("cameroon")) {
-            if ("ID_CARD".equals(docType)) return nn.length() >= 9 && nn.length() <= 17;
-            if ("PASSPORT".equals(docType)) return nn.length() >= 7;
+            if ("ID_CARD".equals(docType))
+                return nn.length() >= 9 && nn.length() <= 17;
+            if ("PASSPORT".equals(docType))
+                return nn.length() >= 7;
             return nn.length() >= 5;
         }
-        if (nc.contains("tchad") || nc.contains("chad")) return nn.length() >= 5 && nn.length() <= 20;
-        if (nc.contains("congo")) return nn.length() >= 5 && nn.length() <= 25;
-        if (nc.contains("centrafrique") || nc.contains("central african")) return nn.length() >= 5 && nn.length() <= 20;
+        if (nc.contains("tchad") || nc.contains("chad"))
+            return nn.length() >= 5 && nn.length() <= 20;
+        if (nc.contains("congo"))
+            return nn.length() >= 5 && nn.length() <= 25;
+        if (nc.contains("centrafrique") || nc.contains("central african"))
+            return nn.length() >= 5 && nn.length() <= 20;
         return documentNumber.length() >= 5 && documentNumber.length() <= 30;
     }
 }

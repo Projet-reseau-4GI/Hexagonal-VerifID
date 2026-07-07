@@ -10,6 +10,7 @@ import reactor.core.publisher.Mono;
 
 import lombok.extern.slf4j.Slf4j;
 import java.time.LocalDateTime;
+import com.projects.exception.ExternalServiceUnavailableException;
 
 @RestControllerAdvice
 @Slf4j
@@ -50,6 +51,36 @@ public class GlobalExceptionHandler {
                                                 .timestamp(LocalDateTime.now())
                                                 .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
                                                 .error("Email Service Error")
+                                                .message(ex.getMessage())
+                                                .path(exchange.getRequest().getPath().value())
+                                                .build()));
+        }
+
+        @ExceptionHandler(IllegalArgumentException.class)
+        public Mono<ResponseEntity<ErrorResponse>> handleIllegalArgumentException(IllegalArgumentException ex,
+                        ServerWebExchange exchange) {
+                HttpStatus status = ex.getMessage() != null && ex.getMessage().contains("déjà")
+                                ? HttpStatus.CONFLICT
+                                : HttpStatus.BAD_REQUEST;
+                return Mono.just(ResponseEntity.status(status)
+                                .body(ErrorResponse.builder()
+                                                .timestamp(LocalDateTime.now())
+                                                .status(status.value())
+                                                .error(status.getReasonPhrase())
+                                                .message(ex.getMessage() != null ? ex.getMessage()
+                                                                : "Invalid request")
+                                                .path(exchange.getRequest().getPath().value())
+                                                .build()));
+        }
+
+        @ExceptionHandler(ExternalServiceUnavailableException.class)
+        public Mono<ResponseEntity<ErrorResponse>> handleExternalServiceUnavailable(ExternalServiceUnavailableException ex,
+                        ServerWebExchange exchange) {
+                return Mono.just(ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                                .body(ErrorResponse.builder()
+                                                .timestamp(LocalDateTime.now())
+                                                .status(HttpStatus.SERVICE_UNAVAILABLE.value())
+                                                .error(HttpStatus.SERVICE_UNAVAILABLE.getReasonPhrase())
                                                 .message(ex.getMessage())
                                                 .path(exchange.getRequest().getPath().value())
                                                 .build()));

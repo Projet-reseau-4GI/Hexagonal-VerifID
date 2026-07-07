@@ -12,7 +12,8 @@ import java.util.UUID;
  * Entité R2DBC pour la table `organizations`.
  *
  * L'ID est l'UUID retourné par le Kernel (organization-core).
- * Schéma de BD répartie : même UUID que dans le Kernel, pas de clé étrangère locale.
+ * Schéma de BD répartie : même UUID que dans le Kernel, pas de clé étrangère
+ * locale.
  */
 @Data
 @Builder
@@ -21,7 +22,9 @@ import java.util.UUID;
 @Table("organizations")
 public class OrganizationEntity {
 
-    /** UUID identique à l'organizationId dans le Kernel (pas de champ redondant). */
+    /**
+     * UUID identique à l'organizationId dans le Kernel (pas de champ redondant).
+     */
     @Id
     @Column("id")
     private UUID id;
@@ -80,4 +83,28 @@ public class OrganizationEntity {
     /** Date de création de la clé API. */
     @Column("api_key_created_at")
     private LocalDateTime apiKeyCreatedAt;
+
+    /** Hash BCrypt du mot de passe (auth locale). */
+    @Column("password_hash")
+    private String passwordHash;
+
+    /** Indique si l'email a été vérifié via OTP. */
+    @Column("is_email_verified")
+    private Boolean isEmailVerified;
+
+    /** Statut : PENDING, ACTIVE, SUSPENDED. */
+    @Column("status")
+    private String status;
+
+    /** Code OTP temporaire. */
+    @Column("otp_code")
+    private String otpCode;
+
+    /** Expiration de l'OTP. */
+    @Column("otp_expiry")
+    private LocalDateTime otpExpiry;
+
+    /** Identifiant client unique généré à l'inscription. */
+    @Column("client_id")
+    private String clientId;
 }

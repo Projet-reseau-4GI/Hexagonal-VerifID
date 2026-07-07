@@ -12,10 +12,16 @@ import java.util.UUID;
  */
 public class Organization {
 
-    /** UUID identique à organizationId dans le Kernel (pas de champ kernelOrgId redondant). */
+    /**
+     * UUID identique à organizationId dans le Kernel (pas de champ kernelOrgId
+     * redondant).
+     */
     private UUID id;
 
-    /** Email de contact de l'organisation (utilisé pour la recherche dans le Kernel). */
+    /**
+     * Email de contact de l'organisation (utilisé pour la recherche dans le
+     * Kernel).
+     */
     private String email;
 
     /** Nom court (shortName depuis organization-core). */
@@ -57,7 +63,26 @@ public class Organization {
     /** Date de création de la clé API. */
     private LocalDateTime apiKeyCreatedAt;
 
-    public Organization() {}
+    /** Hash BCrypt du mot de passe (auth locale, sans Kernel). */
+    private String passwordHash;
+
+    /** Email vérifié via OTP. */
+    private Boolean isEmailVerified;
+
+    /** Statut de l'organisation : PENDING, ACTIVE, SUSPENDED. */
+    private String status;
+
+    /** Code OTP temporaire (inscription ou mot de passe oublié). */
+    private String otpCode;
+
+    /** Date/heure d'expiration de l'OTP. */
+    private java.time.LocalDateTime otpExpiry;
+
+    /** Identifiant client unique auto-généré lors de l'inscription. */
+    private String clientId;
+
+    public Organization() {
+    }
 
     private Organization(Builder b) {
         this.id = b.id;
@@ -74,9 +99,17 @@ public class Organization {
         this.apiKeyLabel = b.apiKeyLabel;
         this.apiKeyActive = b.apiKeyActive;
         this.apiKeyCreatedAt = b.apiKeyCreatedAt;
+        this.passwordHash = b.passwordHash;
+        this.isEmailVerified = b.isEmailVerified;
+        this.status = b.status;
+        this.otpCode = b.otpCode;
+        this.otpExpiry = b.otpExpiry;
+        this.clientId = b.clientId;
     }
 
-    public static Builder builder() { return new Builder(); }
+    public static Builder builder() {
+        return new Builder();
+    }
 
     public static class Builder {
         private UUID id;
@@ -93,53 +126,277 @@ public class Organization {
         private String apiKeyLabel;
         private Boolean apiKeyActive = true;
         private LocalDateTime apiKeyCreatedAt;
+        private String passwordHash;
+        private Boolean isEmailVerified = false;
+        private String status = "PENDING";
+        private String otpCode;
+        private LocalDateTime otpExpiry;
+        private String clientId;
 
-        public Builder id(UUID id)                                    { this.id = id; return this; }
-        public Builder email(String email)                            { this.email = email; return this; }
-        public Builder name(String name)                              { this.name = name; return this; }
-        public Builder displayName(String displayName)                { this.displayName = displayName; return this; }
-        public Builder logoUri(String logoUri)                        { this.logoUri = logoUri; return this; }
-        public Builder plan(String plan)                              { this.plan = plan; return this; }
-        public Builder dailyVerificationCount(Integer c)              { this.dailyVerificationCount = c; return this; }
-        public Builder dailyCountResetAt(LocalDateTime t)             { this.dailyCountResetAt = t; return this; }
-        public Builder createdAt(LocalDateTime t)                     { this.createdAt = t; return this; }
-        public Builder lastSyncedAt(LocalDateTime t)                  { this.lastSyncedAt = t; return this; }
-        public Builder apiKeyHash(String apiKeyHash)                  { this.apiKeyHash = apiKeyHash; return this; }
-        public Builder apiKeyLabel(String apiKeyLabel)                { this.apiKeyLabel = apiKeyLabel; return this; }
-        public Builder apiKeyActive(Boolean apiKeyActive)             { this.apiKeyActive = apiKeyActive; return this; }
-        public Builder apiKeyCreatedAt(LocalDateTime t)               { this.apiKeyCreatedAt = t; return this; }
-        public Organization build()                                   { return new Organization(this); }
+        public Builder id(UUID id) {
+            this.id = id;
+            return this;
+        }
+
+        public Builder email(String email) {
+            this.email = email;
+            return this;
+        }
+
+        public Builder name(String name) {
+            this.name = name;
+            return this;
+        }
+
+        public Builder displayName(String displayName) {
+            this.displayName = displayName;
+            return this;
+        }
+
+        public Builder logoUri(String logoUri) {
+            this.logoUri = logoUri;
+            return this;
+        }
+
+        public Builder plan(String plan) {
+            this.plan = plan;
+            return this;
+        }
+
+        public Builder dailyVerificationCount(Integer c) {
+            this.dailyVerificationCount = c;
+            return this;
+        }
+
+        public Builder dailyCountResetAt(LocalDateTime t) {
+            this.dailyCountResetAt = t;
+            return this;
+        }
+
+        public Builder createdAt(LocalDateTime t) {
+            this.createdAt = t;
+            return this;
+        }
+
+        public Builder lastSyncedAt(LocalDateTime t) {
+            this.lastSyncedAt = t;
+            return this;
+        }
+
+        public Builder apiKeyHash(String apiKeyHash) {
+            this.apiKeyHash = apiKeyHash;
+            return this;
+        }
+
+        public Builder apiKeyLabel(String apiKeyLabel) {
+            this.apiKeyLabel = apiKeyLabel;
+            return this;
+        }
+
+        public Builder apiKeyActive(Boolean apiKeyActive) {
+            this.apiKeyActive = apiKeyActive;
+            return this;
+        }
+
+        public Builder apiKeyCreatedAt(LocalDateTime t) {
+            this.apiKeyCreatedAt = t;
+            return this;
+        }
+
+        public Builder passwordHash(String passwordHash) {
+            this.passwordHash = passwordHash;
+            return this;
+        }
+
+        public Builder isEmailVerified(Boolean v) {
+            this.isEmailVerified = v;
+            return this;
+        }
+
+        public Builder status(String status) {
+            this.status = status;
+            return this;
+        }
+
+        public Builder otpCode(String otpCode) {
+            this.otpCode = otpCode;
+            return this;
+        }
+
+        public Builder otpExpiry(LocalDateTime t) {
+            this.otpExpiry = t;
+            return this;
+        }
+
+        public Builder clientId(String clientId) {
+            this.clientId = clientId;
+            return this;
+        }
+
+        public Organization build() {
+            return new Organization(this);
+        }
     }
 
     // Getters
-    public UUID           getId()                     { return id; }
-    public String         getEmail()                  { return email; }
-    public String         getName()                   { return name; }
-    public String         getDisplayName()            { return displayName; }
-    public String         getLogoUri()                { return logoUri; }
-    public String         getPlan()                   { return plan; }
-    public Integer        getDailyVerificationCount() { return dailyVerificationCount; }
-    public LocalDateTime  getDailyCountResetAt()      { return dailyCountResetAt; }
-    public LocalDateTime  getCreatedAt()              { return createdAt; }
-    public LocalDateTime  getLastSyncedAt()           { return lastSyncedAt; }
-    public String         getApiKeyHash()             { return apiKeyHash; }
-    public String         getApiKeyLabel()            { return apiKeyLabel; }
-    public Boolean        getApiKeyActive()           { return apiKeyActive; }
-    public LocalDateTime  getApiKeyCreatedAt()        { return apiKeyCreatedAt; }
+    public UUID getId() {
+        return id;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public String getDisplayName() {
+        return displayName;
+    }
+
+    public String getLogoUri() {
+        return logoUri;
+    }
+
+    public String getPlan() {
+        return plan;
+    }
+
+    public Integer getDailyVerificationCount() {
+        return dailyVerificationCount;
+    }
+
+    public LocalDateTime getDailyCountResetAt() {
+        return dailyCountResetAt;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public LocalDateTime getLastSyncedAt() {
+        return lastSyncedAt;
+    }
+
+    public String getApiKeyHash() {
+        return apiKeyHash;
+    }
+
+    public String getApiKeyLabel() {
+        return apiKeyLabel;
+    }
+
+    public Boolean getApiKeyActive() {
+        return apiKeyActive;
+    }
+
+    public LocalDateTime getApiKeyCreatedAt() {
+        return apiKeyCreatedAt;
+    }
+
+    public String getPasswordHash() {
+        return passwordHash;
+    }
+
+    public Boolean getIsEmailVerified() {
+        return isEmailVerified;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public String getOtpCode() {
+        return otpCode;
+    }
+
+    public LocalDateTime getOtpExpiry() {
+        return otpExpiry;
+    }
+
+    public String getClientId() {
+        return clientId;
+    }
 
     // Setters
-    public void setId(UUID id)                                    { this.id = id; }
-    public void setEmail(String email)                            { this.email = email; }
-    public void setName(String name)                              { this.name = name; }
-    public void setDisplayName(String displayName)                { this.displayName = displayName; }
-    public void setLogoUri(String logoUri)                        { this.logoUri = logoUri; }
-    public void setPlan(String plan)                              { this.plan = plan; }
-    public void setDailyVerificationCount(Integer c)              { this.dailyVerificationCount = c; }
-    public void setDailyCountResetAt(LocalDateTime t)             { this.dailyCountResetAt = t; }
-    public void setCreatedAt(LocalDateTime t)                     { this.createdAt = t; }
-    public void setLastSyncedAt(LocalDateTime t)                  { this.lastSyncedAt = t; }
-    public void setApiKeyHash(String apiKeyHash)                  { this.apiKeyHash = apiKeyHash; }
-    public void setApiKeyLabel(String apiKeyLabel)                { this.apiKeyLabel = apiKeyLabel; }
-    public void setApiKeyActive(Boolean apiKeyActive)             { this.apiKeyActive = apiKeyActive; }
-    public void setApiKeyCreatedAt(LocalDateTime t)               { this.apiKeyCreatedAt = t; }
+    public void setId(UUID id) {
+        this.id = id;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public void setDisplayName(String displayName) {
+        this.displayName = displayName;
+    }
+
+    public void setLogoUri(String logoUri) {
+        this.logoUri = logoUri;
+    }
+
+    public void setPlan(String plan) {
+        this.plan = plan;
+    }
+
+    public void setDailyVerificationCount(Integer c) {
+        this.dailyVerificationCount = c;
+    }
+
+    public void setDailyCountResetAt(LocalDateTime t) {
+        this.dailyCountResetAt = t;
+    }
+
+    public void setCreatedAt(LocalDateTime t) {
+        this.createdAt = t;
+    }
+
+    public void setLastSyncedAt(LocalDateTime t) {
+        this.lastSyncedAt = t;
+    }
+
+    public void setApiKeyHash(String apiKeyHash) {
+        this.apiKeyHash = apiKeyHash;
+    }
+
+    public void setApiKeyLabel(String apiKeyLabel) {
+        this.apiKeyLabel = apiKeyLabel;
+    }
+
+    public void setApiKeyActive(Boolean apiKeyActive) {
+        this.apiKeyActive = apiKeyActive;
+    }
+
+    public void setApiKeyCreatedAt(LocalDateTime t) {
+        this.apiKeyCreatedAt = t;
+    }
+
+    public void setPasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
+    public void setIsEmailVerified(Boolean v) {
+        this.isEmailVerified = v;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public void setOtpCode(String otpCode) {
+        this.otpCode = otpCode;
+    }
+
+    public void setOtpExpiry(LocalDateTime t) {
+        this.otpExpiry = t;
+    }
+
+    public void setClientId(String clientId) {
+        this.clientId = clientId;
+    }
 }

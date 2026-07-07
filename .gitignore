@@ -37,8 +37,8 @@ database_schema.sql
 KSM_Kernel_Layer-main/
 rapport Kernel Réseau.pdf
 
-### Secrets — NE JAMAIS committer ces fichiers ###
-src/main/resources/application.properties
-.env
-.env.local
-*.env
+### Secrets — à gérer explicitement si nécessaire ###
+# src/main/resources/application.properties
+# .env
+# .env.local
+# *.env

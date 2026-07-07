@@ -1,35 +1,88 @@
 package com.projects.adapter.in.web;
 
-import com.projects.adapter.in.web.dto.OrgAuthResponse;
-import com.projects.adapter.in.web.dto.OrgInitiateAuthRequest;
-import com.projects.adapter.in.web.dto.OrgVerifyOtpRequest;
+import com.projects.adapter.in.web.dto.*;
 import com.projects.application.port.in.OrgAuthUseCase;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
+/**
+ * Contrôleur REST d'authentification des organisations VerifID.
+ *
+ * Mode autonome : aucune dépendance au Kernel RT-Comops.
+ *
+ * Flux d'inscription (2 étapes) :
+ * POST /api/org/auth/register → enregistre l'org + envoie OTP par email
+ * POST /api/org/auth/verify-email → vérifie l'OTP + active le compte + retourne
+ * JWT
+ *
+ * Connexion directe :
+ * POST /api/org/auth/login → email + mot de passe → JWT local
+ *
+ * Réinitialisation de mot de passe :
+ * POST /api/org/auth/initiate → envoie OTP de reset par email
+ * POST /api/org/auth/verify-otp → valide l'OTP + retourne JWT (compat ancien
+ * flux)
+ */
 @RestController
 @RequestMapping("/api/org/auth")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "*")
-@Tag(name = "Organization Auth", description = "Authentification des organisations via Kernel Core")
+@Tag(name = "Organisation Auth", description = "Authentification autonome des organisations (sans Kernel)")
 public class OrgAuthController {
 
     private final OrgAuthUseCase orgAuthUseCase;
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // INSCRIPTION
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @PostMapping("/register")
+    @Operation(summary = "Étape 1/2 : Inscription — enregistre l'organisation et envoie un OTP par email")
+    public Mono<ResponseEntity<String>> register(@Valid @RequestBody OrgRegisterRequest request) {
+        return orgAuthUseCase.register(request)
+                .then(Mono.just(ResponseEntity
+                        .status(HttpStatus.CREATED)
+                        .body("Compte créé. Un code de vérification a été envoyé à " + request.getEmail() + ".")));
+    }
+
+    @PostMapping("/verify-email")
+    @Operation(summary = "Étape 2/2 : Vérifie l'OTP + active le compte + retourne le JWT et les infos de l'organisation")
+    public Mono<ResponseEntity<OrgAuthResponse>> verifyEmail(@Valid @RequestBody OrgVerifyEmailRequest request) {
+        return orgAuthUseCase.verifyEmailAndActivate(request)
+                .map(ResponseEntity::ok);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CONNEXION
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @PostMapping("/login")
+    @Operation(summary = "Connexion directe par email + mot de passe → JWT local VerifID")
+    public Mono<ResponseEntity<OrgAuthResponse>> login(@Valid @RequestBody OrgLoginRequest request) {
+        return orgAuthUseCase.login(request)
+                .map(ResponseEntity::ok);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // MOT DE PASSE OUBLIÉ (compatibilité ancien flux OTP)
+    // ─────────────────────────────────────────────────────────────────────────
+
     @PostMapping("/initiate")
-    @Operation(summary = "Étape 1 : Demande l'envoi d'un code OTP par email via le Kernel")
+    @Operation(summary = "Mot de passe oublié — envoie un OTP de réinitialisation par email")
     public Mono<ResponseEntity<String>> initiateAuth(@Valid @RequestBody OrgInitiateAuthRequest request) {
         return orgAuthUseCase.initiateAuth(request)
-                .then(Mono.just(ResponseEntity.ok("Si l'organisation existe, un code OTP a été envoyé à l'adresse email.")));
+                .then(Mono.just(ResponseEntity.ok(
+                        "Si un compte existe pour cet email, un code OTP a été envoyé.")));
     }
 
     @PostMapping("/verify-otp")
-    @Operation(summary = "Étape 2 : Vérifie le code OTP et retourne le JWT + informations de l'organisation")
+    @Operation(summary = "Valide l'OTP de réinitialisation et retourne un JWT (compatibilité)")
     public Mono<ResponseEntity<OrgAuthResponse>> verifyOtp(@Valid @RequestBody OrgVerifyOtpRequest request) {
         return orgAuthUseCase.completeAuth(request)
                 .map(ResponseEntity::ok);

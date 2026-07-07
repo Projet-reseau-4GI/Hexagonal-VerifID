@@ -83,6 +83,12 @@ public class OrganizationRepositoryAdapter implements OrganizationRepositoryPort
                 .apiKeyLabel(org.getApiKeyLabel())
                 .apiKeyActive(org.getApiKeyActive())
                 .apiKeyCreatedAt(org.getApiKeyCreatedAt())
+                .passwordHash(org.getPasswordHash())
+                .isEmailVerified(org.getIsEmailVerified())
+                .status(org.getStatus() != null ? org.getStatus() : "PENDING")
+                .otpCode(org.getOtpCode())
+                .otpExpiry(org.getOtpExpiry())
+                .clientId(org.getClientId())
                 .build();
     }
 
@@ -102,6 +108,12 @@ public class OrganizationRepositoryAdapter implements OrganizationRepositoryPort
                 .apiKeyLabel(entity.getApiKeyLabel())
                 .apiKeyActive(entity.getApiKeyActive())
                 .apiKeyCreatedAt(entity.getApiKeyCreatedAt())
+                .passwordHash(entity.getPasswordHash())
+                .isEmailVerified(entity.getIsEmailVerified())
+                .status(entity.getStatus())
+                .otpCode(entity.getOtpCode())
+                .otpExpiry(entity.getOtpExpiry())
+                .clientId(entity.getClientId())
                 .build();
     }
 }

@@ -1,6 +1,5 @@
 package com.projects.config;
 
-import com.projects.config.kernel.KernelTenantContextFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
@@ -13,51 +12,56 @@ import org.springframework.security.web.server.SecurityWebFilterChain;
 @EnableWebFluxSecurity
 public class SecurityConfig {
 
-    @Bean
-    public BCryptPasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
+        @Bean
+        public BCryptPasswordEncoder passwordEncoder() {
+                return new BCryptPasswordEncoder();
+        }
 
-    @Bean
-    public SecurityWebFilterChain securityWebFilterChain(
-            ServerHttpSecurity http,
-            KernelTenantContextFilter kernelTenantContextFilter,
-            ApiKeyAuthenticationFilter apiKeyAuthenticationFilter,
-            AdminJwtAuthenticationFilter adminJwtAuthenticationFilter) {
+        @Bean
+        public SecurityWebFilterChain securityWebFilterChain(
+                        ServerHttpSecurity http,
+                        ApiKeyAuthenticationFilter apiKeyAuthenticationFilter,
+                        AdminJwtAuthenticationFilter adminJwtAuthenticationFilter,
+                        LocalJwtAuthFilter localJwtAuthFilter) {
 
-        return http
-            .csrf(csrf -> csrf.disable())
-            .authorizeExchange(exchange -> exchange
-                // Public: Swagger
-                .pathMatchers(
-                    "/swagger-ui.html", "/swagger-ui/**",
-                    "/v3/api-docs/**", "/api-docs/**", "/webjars/**"
-                ).permitAll()
-                // Public: Health & métriques
-                .pathMatchers("/api/metrics/**").permitAll()
-                .pathMatchers("/actuator/**").permitAll()
-                // Webhook Stripe
-                .pathMatchers("/api/payments/webhook").permitAll()
-                // SDK Snippets
-                .pathMatchers("/api/sdk/**").permitAll()
-                // Admin Traceability (protected by AdminJwtAuthenticationFilter)
-                .pathMatchers("/api/admin/traceability/**").hasRole("SUPER_ADMIN")
-                // Public: Vérification de documents (auth par X-API-KEY ou JWT kernel)
-                .pathMatchers("/api/verify/**", "/api/documents/**").permitAll()
-                // Public: Dashboard
-                .pathMatchers("/api/dashboard/**").permitAll()
-                // Any other exchange is permitted since we rely on Gateway/Kernel for external auth, 
-                // and API Key filter for documents.
-                .anyExchange().permitAll()
-            )
-            /*
-             * Ordre des filtres :
-             *  1. KernelTenantContextFilter  — lit X-Tenant-Id, X-Org-Id et valide le JWT RS256
-             *  2. ApiKeyAuthenticationFilter — valide X-API-KEY pour l'analyse de documents
-             */
-            .addFilterBefore(kernelTenantContextFilter, SecurityWebFiltersOrder.AUTHENTICATION)
-            .addFilterAt(adminJwtAuthenticationFilter, SecurityWebFiltersOrder.AUTHENTICATION)
-            .addFilterAt(apiKeyAuthenticationFilter, SecurityWebFiltersOrder.AUTHENTICATION)
-            .build();
-    }
+                return http
+                                .csrf(csrf -> csrf.disable())
+                                .authorizeExchange(exchange -> exchange
+                                                // Swagger / docs
+                                                .pathMatchers(
+                                                                "/swagger-ui.html", "/swagger-ui/**",
+                                                                "/v3/api-docs/**", "/api-docs/**", "/webjars/**")
+                                                .permitAll()
+                                                // Santé & métriques
+                                                .pathMatchers("/actuator/**").permitAll()
+                                                // SDK
+                                                .pathMatchers("/api/sdk/**").permitAll()
+                                                // Webhook paiement
+                                                .pathMatchers("/api/payments/webhook").permitAll()
+                                                // Auth organisation (inscription, connexion, OTP)
+                                                .pathMatchers(
+                                                                "/api/org/auth/register",
+                                                                "/api/org/auth/verify-email",
+                                                                "/api/org/auth/login",
+                                                                "/api/org/auth/initiate",
+                                                                "/api/org/auth/verify-otp")
+                                                .permitAll()
+                                                // Auth admin
+                                                .pathMatchers("/api/admin/auth/**").permitAll()
+                                                // Vérification de documents (protégée par X-API-KEY via
+                                                // ApiKeyAuthenticationFilter)
+                                                .pathMatchers("/api/documents/**", "/api/verify/**").permitAll()
+                                                // Dashboard
+                                                .pathMatchers("/api/dashboard/**").permitAll()
+                                                // Super Admin traceability → rôle requis
+                                                .pathMatchers("/api/admin/traceability/**").hasRole("SUPER_ADMIN")
+                                                // Tout le reste
+                                                .anyExchange().permitAll())
+                                /*
+                                 */
+                                .addFilterAt(localJwtAuthFilter, SecurityWebFiltersOrder.AUTHENTICATION)
+                                .addFilterAt(adminJwtAuthenticationFilter, SecurityWebFiltersOrder.AUTHENTICATION)
+                                .addFilterAt(apiKeyAuthenticationFilter, SecurityWebFiltersOrder.AUTHENTICATION)
+                                .build();
+        }
 }

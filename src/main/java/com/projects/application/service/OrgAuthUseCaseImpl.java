@@ -1,113 +1,223 @@
 package com.projects.application.service;
 
-import com.projects.adapter.in.web.dto.OrgAuthResponse;
-import com.projects.adapter.in.web.dto.OrgInitiateAuthRequest;
-import com.projects.adapter.in.web.dto.OrgVerifyOtpRequest;
+import com.projects.adapter.in.web.dto.*;
 import com.projects.application.port.in.OrgAuthUseCase;
-import com.projects.application.port.out.AuthGatewayPort;
-import com.projects.application.port.out.OrganizationGatewayPort;
+import com.projects.application.port.out.EmailServicePort;
 import com.projects.application.port.out.OrganizationRepositoryPort;
+import com.projects.application.service.admin.LocalJwtService;
 import com.projects.domain.model.Organization;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
+import java.util.Random;
+import java.util.UUID;
 
+/**
+ * Implémentation autonome du UseCase d'authentification des organisations.
+ *
+ * AUCUN appel au Kernel RT-Comops. Tout est géré localement :
+ * - Inscription + vérification email via OTP (Brevo)
+ * - Connexion email + mot de passe → JWT local (HS256)
+ * - Génération de clientId unique
+ * - Réinitialisation de mot de passe via OTP
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class OrgAuthUseCaseImpl implements OrgAuthUseCase {
 
-    private final AuthGatewayPort authGateway;
-    private final OrganizationGatewayPort orgGateway;
     private final OrganizationRepositoryPort organizationRepository;
+    private final EmailServicePort emailService;
+    private final LocalJwtService jwtService;
+    private final BCryptPasswordEncoder passwordEncoder;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // INSCRIPTION
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Override
+    public Mono<Void> register(OrgRegisterRequest request) {
+        String email = request.getEmail().toLowerCase().trim();
+        log.info("[auth] Début d'inscription pour email={}", email);
+
+        return organizationRepository.existsByEmail(email)
+                .flatMap(exists -> {
+                    if (exists) {
+                        return Mono.error(new IllegalArgumentException(
+                                "Un compte existe déjà pour cet email : " + email));
+                    }
+
+                    String otp = generateOtp();
+                    LocalDateTime otpExpiry = LocalDateTime.now().plusMinutes(15);
+                    String passwordHash = passwordEncoder.encode(request.getPassword());
+                    String clientId = "cli-" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+
+                    Organization org = Organization.builder()
+                            .id(UUID.randomUUID())
+                            .email(email)
+                            .name(request.getOrganizationName())
+                            .displayName(request.getDisplayName() != null
+                                    ? request.getDisplayName()
+                                    : request.getOrganizationName())
+                            .logoUri(request.getLogoUri())
+                            .plan("FREEMIUM")
+                            .status("PENDING")
+                            .isEmailVerified(false)
+                            .passwordHash(passwordHash)
+                            .clientId(clientId)
+                            .otpCode(otp)
+                            .otpExpiry(otpExpiry)
+                            .dailyVerificationCount(0)
+                            .apiKeyActive(false)
+                            .createdAt(LocalDateTime.now())
+                            .build();
+
+                    return organizationRepository.save(org)
+                            .flatMap(saved -> emailService.sendOtp(email, otp, saved.getDisplayName())
+                                    .doOnSuccess(v -> log.info("[auth] OTP d'inscription envoyé à {}", email))
+                                    .onErrorResume(ex -> {
+                                        log.warn("[auth] Échec d'envoi de l'OTP pour {} : {}. Le compte reste créé pour test local.", email, ex.getMessage());
+                                        return Mono.empty();
+                                    }))
+                            .then();
+                });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // VÉRIFICATION EMAIL + ACTIVATION
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Override
+    public Mono<OrgAuthResponse> verifyEmailAndActivate(OrgVerifyEmailRequest request) {
+        String email = request.getEmail().toLowerCase().trim();
+        log.info("[auth] Vérification OTP pour email={}", email);
+
+        return organizationRepository.findByEmail(email)
+                .switchIfEmpty(Mono.error(new RuntimeException("Organisation introuvable pour : " + email)))
+                .flatMap(org -> {
+                    if (Boolean.TRUE.equals(org.getIsEmailVerified())) {
+                        return Mono.error(new IllegalStateException("Email déjà vérifié. Utilisez la connexion."));
+                    }
+                    if (org.getOtpCode() == null || !org.getOtpCode().equals(request.getOtpCode())) {
+                        return Mono.error(new IllegalArgumentException("Code OTP incorrect."));
+                    }
+                    if (org.getOtpExpiry() == null || org.getOtpExpiry().isBefore(LocalDateTime.now())) {
+                        return Mono.error(
+                                new IllegalArgumentException("Code OTP expiré. Veuillez recommencer l'inscription."));
+                    }
+
+                    // Activer le compte
+                    org.setIsEmailVerified(true);
+                    org.setStatus("ACTIVE");
+                    org.setOtpCode(null);
+                    org.setOtpExpiry(null);
+
+                    return organizationRepository.save(org)
+                            .map(saved -> buildAuthResponse(saved, jwtService.generateToken(saved.getEmail(), "ORG")));
+                });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CONNEXION
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Override
+    public Mono<OrgAuthResponse> login(OrgLoginRequest request) {
+        String email = request.getEmail().toLowerCase().trim();
+        log.info("[auth] Tentative de connexion pour email={}", email);
+
+        return organizationRepository.findByEmail(email)
+                .switchIfEmpty(Mono.error(new RuntimeException("Identifiants incorrects.")))
+                .flatMap(org -> {
+                    if (!Boolean.TRUE.equals(org.getIsEmailVerified())) {
+                        return Mono.error(new IllegalStateException(
+                                "Veuillez d'abord vérifier votre email avant de vous connecter."));
+                    }
+                    if (!"ACTIVE".equals(org.getStatus())) {
+                        return Mono.error(new IllegalStateException("Compte suspendu ou désactivé."));
+                    }
+                    if (!passwordEncoder.matches(request.getPassword(), org.getPasswordHash())) {
+                        return Mono.error(new IllegalArgumentException("Identifiants incorrects."));
+                    }
+
+                    String token = jwtService.generateToken(org.getEmail(), "ORG");
+                    log.info("[auth] Connexion réussie pour org={}", org.getId());
+                    return Mono.just(buildAuthResponse(org, token));
+                });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // MOT DE PASSE OUBLIÉ (compat ancien flux OTP)
+    // ─────────────────────────────────────────────────────────────────────────
 
     @Override
     public Mono<Void> initiateAuth(OrgInitiateAuthRequest request) {
-        String email = request.getEmail();
-        log.info("[org-auth] Initiation de l'authentification pour : {}", email);
+        String email = request.getEmail().toLowerCase().trim();
+        log.info("[auth] Demande de réinitialisation/OTP pour email={}", email);
 
-        // On cherche d'abord en base locale (notre cache VerifID persistant).
-        // Si elle n'y est pas, on interroge le Kernel.
         return organizationRepository.findByEmail(email)
-                .map(org -> true)
-                .switchIfEmpty(
-                        orgGateway.searchOrganizationByEmail(email, null)
-                                .map(orgSummary -> true)
-                )
-                .switchIfEmpty(Mono.error(new RuntimeException("Organisation introuvable pour cet email")))
-                .flatMap(found -> {
-                    log.info("[org-auth] Organisation trouvée pour : {}", email);
-                    return authGateway.initiateOtp(email);
+                .switchIfEmpty(Mono.error(new RuntimeException("Aucun compte trouvé pour cet email.")))
+                .flatMap(org -> {
+                    String otp = generateOtp();
+                    org.setOtpCode(otp);
+                    org.setOtpExpiry(LocalDateTime.now().plusMinutes(15));
+                    return organizationRepository.save(org)
+                            .flatMap(saved -> emailService.sendPasswordReset(email, otp, saved.getDisplayName()))
+                            .then();
                 });
     }
 
     @Override
     public Mono<OrgAuthResponse> completeAuth(OrgVerifyOtpRequest request) {
-        String email = request.getEmail();
-        log.info("[org-auth] Validation OTP pour : {}", email);
+        String email = request.getEmail().toLowerCase().trim();
+        log.info("[auth] Validation OTP (flux reset) pour email={}", email);
 
-        // Le tenantId sera résolu côté Kernel par l'email. On passe null.
-        return authGateway.verifyOtpAndLogin(email, request.getOtpCode(), null)
-                .flatMap(loginResponse -> {
-                    // Vérifier que l'utilisateur a au moins une organisation
-                    if (loginResponse.organizations() == null || loginResponse.organizations().isEmpty()) {
-                        return Mono.error(new RuntimeException("Aucune organisation liée à ce compte."));
+        return organizationRepository.findByEmail(email)
+                .switchIfEmpty(Mono.error(new RuntimeException("Organisation introuvable pour : " + email)))
+                .flatMap(org -> {
+                    if (org.getOtpCode() == null || !org.getOtpCode().equals(request.getOtpCode())) {
+                        return Mono.error(new IllegalArgumentException("Code OTP incorrect."));
+                    }
+                    if (org.getOtpExpiry() == null || org.getOtpExpiry().isBefore(LocalDateTime.now())) {
+                        return Mono.error(new IllegalArgumentException("Code OTP expiré."));
                     }
 
-                    // On prend la première organisation de la liste.
-                    // Si l'utilisateur appartient à plusieurs orgs, le Kernel gérera ça, 
-                    // mais VerifID synchronisera la première par défaut.
-                    var orgRef = loginResponse.organizations().get(0);
-                    
-                    // On récupère les détails complets de cette organisation depuis le Kernel
-                    // (On utilise le token fraîchement récupéré pour s'authentifier).
-                    return orgGateway.getOrganization(null, orgRef.organizationId(), loginResponse.accessToken())
-                            .flatMap(orgSummary -> syncOrganizationLocal(orgSummary, loginResponse))
-                            .map(savedOrg -> OrgAuthResponse.builder()
-                                    .token(loginResponse.accessToken()) // On retourne le token du Kernel
-                                    .organizationId(savedOrg.getId())
-                                    .organizationName(savedOrg.getDisplayName())
-                                    .email(loginResponse.email())
-                                    .plan(savedOrg.getPlan())
-                                    .logoUri(savedOrg.getLogoUri())
-                                    .build());
+                    org.setOtpCode(null);
+                    org.setOtpExpiry(null);
+                    // Si le compte est en PENDING et qu'il confirme via OTP, on l'active
+                    if ("PENDING".equals(org.getStatus())) {
+                        org.setIsEmailVerified(true);
+                        org.setStatus("ACTIVE");
+                    }
+
+                    return organizationRepository.save(org)
+                            .map(saved -> buildAuthResponse(saved, jwtService.generateToken(saved.getEmail(), "ORG")));
                 });
     }
 
-    /**
-     * Synchronise l'organisation du Kernel vers la base de données locale (VerifID).
-     */
-    private Mono<Organization> syncOrganizationLocal(OrganizationGatewayPort.OrganizationSummaryDTO orgSummary, AuthGatewayPort.AuthLoginDTO loginResponse) {
-        return organizationRepository.findById(orgSummary.id())
-                .flatMap(existingOrg -> {
-                    // L'organisation existe déjà, on met à jour les infos de base
-                    existingOrg.setName(orgSummary.name());
-                    existingOrg.setDisplayName(orgSummary.displayName());
-                    existingOrg.setLogoUri(orgSummary.logoUri());
-                    existingOrg.setLastSyncedAt(LocalDateTime.now());
-                    return organizationRepository.save(existingOrg);
-                })
-                .switchIfEmpty(Mono.defer(() -> {
-                    // Première connexion, on crée l'organisation locale
-                    Organization newOrg = Organization.builder()
-                            .id(orgSummary.id()) // ID du Kernel
-                            .email(loginResponse.email())
-                            .name(orgSummary.name())
-                            .displayName(orgSummary.displayName())
-                            .logoUri(orgSummary.logoUri())
-                            .plan("FREEMIUM") // Forfait initial par défaut
-                            .dailyVerificationCount(0)
-                            .createdAt(LocalDateTime.now())
-                            .lastSyncedAt(LocalDateTime.now())
-                            // Les clés API seront créées plus tard par l'utilisateur
-                            .apiKeyActive(true)
-                            .build();
-                    
-                    log.info("[org-auth] Création de l'organisation locale (ID Kernel) : {}", newOrg.getId());
-                    return organizationRepository.save(newOrg);
-                }));
+    // ─────────────────────────────────────────────────────────────────────────
+    // Helpers privés
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private OrgAuthResponse buildAuthResponse(Organization org, String token) {
+        return OrgAuthResponse.builder()
+                .token(token)
+                .organizationId(org.getId())
+                .organizationName(org.getDisplayName())
+                .email(org.getEmail())
+                .plan(org.getPlan())
+                .logoUri(org.getLogoUri())
+                .clientId(org.getClientId())
+                .status(org.getStatus())
+                .build();
+    }
+
+    private String generateOtp() {
+        // OTP à 6 chiffres
+        return String.format("%06d", new Random().nextInt(999999));
     }
 }
