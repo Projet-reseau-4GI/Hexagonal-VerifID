@@ -12,7 +12,10 @@ import lombok.Data;
 @Data
 public class OrgRegisterRequest {
 
-    @NotBlank(message = "Le nom de l'organisation est obligatoire")
+    @NotBlank(message = "Le nom du développeur est obligatoire")
+    private String devName;
+
+    /** Nom de l'organisation (optionnel) */
     private String organizationName;
 
     @NotBlank(message = "L'email est obligatoire")
@@ -22,10 +25,4 @@ public class OrgRegisterRequest {
     @NotBlank(message = "Le mot de passe est obligatoire")
     @Size(min = 8, message = "Le mot de passe doit contenir au moins 8 caractères")
     private String password;
-
-    /** Nom d'affichage optionnel. Si absent, on utilise organizationName. */
-    private String displayName;
-
-    /** URL du logo (optionnel). */
-    private String logoUri;
 }

@@ -8,8 +8,8 @@ import java.util.UUID;
  */
 public record OrganizationSummaryDto(
         UUID id,
-        String name,
-        String displayName,
+        String developerName,
+        String organizationName,
         String email,
         String plan,
         long quotaConsumed,

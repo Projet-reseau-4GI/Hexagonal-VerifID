@@ -29,10 +29,10 @@ class OrgAuthUseCaseImplTest {
         OrgAuthUseCaseImpl useCase = new OrgAuthUseCaseImpl(organizationRepository, emailService, jwtService, passwordEncoder, kernelAuthPort);
 
         OrgRegisterRequest request = new OrgRegisterRequest();
+        request.setDevName("Test Dev");
         request.setOrganizationName("Test Org");
         request.setEmail("test@example.com");
         request.setPassword("Password123");
-        request.setDisplayName("Test Org");
 
         when(organizationRepository.existsByEmail("test@example.com")).thenReturn(Mono.just(false));
         when(passwordEncoder.encode("Password123")).thenReturn("encoded-password");

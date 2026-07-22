@@ -24,14 +24,11 @@ public class Organization {
      */
     private String email;
 
-    /** Nom court (shortName depuis organization-core). */
-    private String name;
+    /** Nom du développeur. */
+    private String developerName;
 
-    /** Nom d'affichage (displayName depuis organization-core). */
-    private String displayName;
-
-    /** URL du logo (logoUri depuis organization-core). */
-    private String logoUri;
+    /** Nom de l'organisation (optionnel). */
+    private String organizationName;
 
     /**
      * Plan tarifaire VerifID.
@@ -87,9 +84,8 @@ public class Organization {
     private Organization(Builder b) {
         this.id = b.id;
         this.email = b.email;
-        this.name = b.name;
-        this.displayName = b.displayName;
-        this.logoUri = b.logoUri;
+        this.developerName = b.developerName;
+        this.organizationName = b.organizationName;
         this.plan = b.plan;
         this.dailyVerificationCount = b.dailyVerificationCount;
         this.dailyCountResetAt = b.dailyCountResetAt;
@@ -114,9 +110,8 @@ public class Organization {
     public static class Builder {
         private UUID id;
         private String email;
-        private String name;
-        private String displayName;
-        private String logoUri;
+        private String developerName;
+        private String organizationName;
         private String plan = "FREE";
         private Integer dailyVerificationCount = 0;
         private LocalDateTime dailyCountResetAt;
@@ -143,18 +138,13 @@ public class Organization {
             return this;
         }
 
-        public Builder name(String name) {
-            this.name = name;
+        public Builder developerName(String developerName) {
+            this.developerName = developerName;
             return this;
         }
 
-        public Builder displayName(String displayName) {
-            this.displayName = displayName;
-            return this;
-        }
-
-        public Builder logoUri(String logoUri) {
-            this.logoUri = logoUri;
+        public Builder organizationName(String organizationName) {
+            this.organizationName = organizationName;
             return this;
         }
 
@@ -247,16 +237,12 @@ public class Organization {
         return email;
     }
 
-    public String getName() {
-        return name;
+    public String getDeveloperName() {
+        return developerName;
     }
 
-    public String getDisplayName() {
-        return displayName;
-    }
-
-    public String getLogoUri() {
-        return logoUri;
+    public String getOrganizationName() {
+        return organizationName;
     }
 
     public String getPlan() {
@@ -328,16 +314,12 @@ public class Organization {
         this.email = email;
     }
 
-    public void setName(String name) {
-        this.name = name;
+    public void setDeveloperName(String developerName) {
+        this.developerName = developerName;
     }
 
-    public void setDisplayName(String displayName) {
-        this.displayName = displayName;
-    }
-
-    public void setLogoUri(String logoUri) {
-        this.logoUri = logoUri;
+    public void setOrganizationName(String organizationName) {
+        this.organizationName = organizationName;
     }
 
     public void setPlan(String plan) {

@@ -7,9 +7,8 @@
 CREATE TABLE IF NOT EXISTS organizations (
     id                       UUID PRIMARY KEY, -- UUID Kernel
     email                    VARCHAR(255) UNIQUE,
-    name                     VARCHAR(255),
-    display_name             VARCHAR(255),
-    logo_uri                 TEXT,
+    developer_name           VARCHAR(255),
+    organization_name        VARCHAR(255),
     plan                     VARCHAR(50)  DEFAULT 'FREE',
     daily_verification_count INTEGER      DEFAULT 0,
     daily_count_reset_at     TIMESTAMP,

@@ -38,7 +38,7 @@ public class ProcessPaymentUseCaseImpl implements ProcessPaymentUseCase {
                     org.setPlan(planId); // Update to new plan locally
                     return organizationRepositoryPort.save(org)
                             .flatMap(savedOrg -> emailServicePort
-                                    .sendPaymentConfirmation(savedOrg.getEmail(), savedOrg.getDisplayName(), planId)
+                                    .sendPaymentConfirmation(savedOrg.getEmail(), savedOrg.getDeveloperName(), planId)
                                     .thenReturn(savedOrg));
                 })
                 .doOnSuccess(savedOrg -> log.info("Successfully upgraded plan for org {} to {} locally", organizationId,

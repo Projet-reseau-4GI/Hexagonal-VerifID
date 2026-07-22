@@ -44,7 +44,7 @@ class CheckQuotaUseCaseImplTest {
         Organization org = Organization.builder()
                 .id(UUID.fromString(ORG_ID))
                 .email("test@verifid.app")
-                .name("TestOrg")
+                .developerName("TestOrg")
                 .plan(plan)
                 .status("ACTIVE")
                 .build();

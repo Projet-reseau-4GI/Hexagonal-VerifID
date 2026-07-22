@@ -81,8 +81,8 @@ public class AdminTraceabilityController {
                 return checkQuotaUseCase.getQuotaStatus(org.getId().toString())
                                 .map(qs -> new OrganizationSummaryDto(
                                                 org.getId(),
-                                                org.getName(),
-                                                org.getDisplayName(),
+                                                org.getDeveloperName(),
+                                                org.getOrganizationName(),
                                                 org.getEmail(),
                                                 org.getPlan(),
                                                 qs.consumed(),
@@ -92,8 +92,8 @@ public class AdminTraceabilityController {
                                                 org.getCreatedAt()))
                                 .onErrorReturn(new OrganizationSummaryDto(
                                                 org.getId(),
-                                                org.getName(),
-                                                org.getDisplayName(),
+                                                org.getDeveloperName(),
+                                                org.getOrganizationName(),
                                                 org.getEmail(),
                                                 org.getPlan(),
                                                 0L,

@@ -43,7 +43,7 @@ public class ManageApiKeyUseCaseImpl implements ManageApiKeyUseCase {
 
                     return organizationRepository.save(org)
                             .flatMap(savedOrg -> emailServicePort
-                                    .sendApiKeyCreatedNotification(savedOrg.getEmail(), savedOrg.getDisplayName())
+                                    .sendApiKeyCreatedNotification(savedOrg.getEmail(), savedOrg.getDeveloperName())
                                     .thenReturn(savedOrg))
                             .map(savedOrg -> new ApiKeyResponse(
                                     savedOrg.getApiKeyLabel(),
@@ -104,7 +104,7 @@ public class ManageApiKeyUseCaseImpl implements ManageApiKeyUseCase {
 
                     return evict.then(organizationRepository.save(org))
                             .flatMap(savedOrg -> emailServicePort
-                                    .sendApiKeyDeletedNotification(savedOrg.getEmail(), savedOrg.getDisplayName())
+                                    .sendApiKeyDeletedNotification(savedOrg.getEmail(), savedOrg.getDeveloperName())
                                     .thenReturn(savedOrg));
                 })
                 .doOnSuccess(o -> log.info("[apikey] Clé révoquée pour org={}", organizationId))

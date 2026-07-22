@@ -61,11 +61,8 @@ public class OrgAuthUseCaseImpl implements OrgAuthUseCase {
                     Organization org = Organization.builder()
                             .id(UUID.randomUUID())
                             .email(email)
-                            .name(request.getOrganizationName())
-                            .displayName(request.getDisplayName() != null
-                                    ? request.getDisplayName()
-                                    : request.getOrganizationName())
-                            .logoUri(request.getLogoUri())
+                            .developerName(request.getDevName())
+                            .organizationName(request.getOrganizationName())
                             .plan("FREE")
                             .status("PENDING")
                             .isEmailVerified(false)
@@ -79,7 +76,7 @@ public class OrgAuthUseCaseImpl implements OrgAuthUseCase {
                             .build();
 
                     return organizationRepository.save(org)
-                            .flatMap(saved -> emailService.sendOtp(email, otp, saved.getDisplayName())
+                            .flatMap(saved -> emailService.sendOtp(email, otp, saved.getDeveloperName())
                                     .doOnSuccess(v -> log.info("[auth] OTP d'inscription envoyé à {}", email))
                                     .onErrorResume(ex -> {
                                         log.warn("[auth] Échec d'envoi de l'OTP pour {} : {}. Le compte reste créé pour test local.", email, ex.getMessage());
@@ -168,7 +165,7 @@ public class OrgAuthUseCaseImpl implements OrgAuthUseCase {
                     org.setOtpCode(otp);
                     org.setOtpExpiry(LocalDateTime.now().plusMinutes(15));
                     return organizationRepository.save(org)
-                            .flatMap(saved -> emailService.sendPasswordReset(email, otp, saved.getDisplayName()))
+                            .flatMap(saved -> emailService.sendPasswordReset(email, otp, saved.getDeveloperName()))
                             .then();
                 });
     }
@@ -246,9 +243,8 @@ public class OrgAuthUseCaseImpl implements OrgAuthUseCase {
                                 Organization newOrg = Organization.builder()
                                         .id(kernelOrg.getId())
                                         .email(kernelOrg.getEmail() != null ? kernelOrg.getEmail() : "no-email@kernel.com")
-                                        .name(kernelOrg.getShortName() != null ? kernelOrg.getShortName() : "Org")
-                                        .displayName(kernelOrg.getDisplayName() != null ? kernelOrg.getDisplayName() : kernelOrg.getShortName())
-                                        .logoUri(kernelOrg.getLogoUri())
+                                        .developerName(kernelOrg.getShortName() != null ? kernelOrg.getShortName() : "Dev")
+                                        .organizationName(kernelOrg.getDisplayName() != null ? kernelOrg.getDisplayName() : kernelOrg.getShortName())
                                         .plan("FREE")
                                         .status("ACTIVE")
                                         .isEmailVerified(true) // Déjà vérifié via Kernel
@@ -278,10 +274,8 @@ public class OrgAuthUseCaseImpl implements OrgAuthUseCase {
         return OrgAuthResponse.builder()
                 .token(token)
                 .organizationId(org.getId())
-                .organizationName(org.getDisplayName())
-                .email(org.getEmail())
-                .plan(org.getPlan())
-                .logoUri(org.getLogoUri())
+                .developerName(org.getDeveloperName())
+                .organizationName(org.getOrganizationName())
                 .clientId(org.getClientId())
                 .status(org.getStatus())
                 .build();

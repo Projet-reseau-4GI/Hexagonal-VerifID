@@ -32,17 +32,13 @@ public class OrganizationEntity {
     @Column("email")
     private String email;
 
-    /** Nom court (shortName du Kernel). */
-    @Column("name")
-    private String name;
+    /** Nom du développeur. */
+    @Column("developer_name")
+    private String developerName;
 
-    /** Nom d'affichage (displayName du Kernel). */
-    @Column("display_name")
-    private String displayName;
-
-    /** URL du logo de l'organisation (logoUri du Kernel). */
-    @Column("logo_uri")
-    private String logoUri;
+    /** Nom de l'organisation. */
+    @Column("organization_name")
+    private String organizationName;
 
     /**
      * Plan tarifaire VerifID.

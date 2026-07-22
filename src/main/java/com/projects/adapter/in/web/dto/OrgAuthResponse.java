@@ -24,7 +24,10 @@ public class OrgAuthResponse {
     /** UUID interne de l'organisation. */
     private UUID organizationId;
 
-    /** Nom d'affichage de l'organisation. */
+    /** Nom du développeur. */
+    private String developerName;
+
+    /** Nom de l'organisation. */
     private String organizationName;
 
     /** Email de contact. */
@@ -32,9 +35,6 @@ public class OrgAuthResponse {
 
     /** Plan tarifaire actuel : FREEMIUM, STARTER, PRO. */
     private String plan;
-
-    /** URL du logo. */
-    private String logoUri;
 
     /**
      * Identifiant client unique de l'organisation.

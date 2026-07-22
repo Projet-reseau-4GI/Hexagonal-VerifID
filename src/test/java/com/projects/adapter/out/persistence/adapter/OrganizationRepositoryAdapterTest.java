@@ -27,8 +27,8 @@ class OrganizationRepositoryAdapterTest {
         Organization mockOrg = Organization.builder()
                 .id(UUID.randomUUID()) // Normalement généré par le Kernel, ici on mock pour le test
                 .email("tadidajalil01@gmail.com")
-                .name("Polytech")
-                .displayName("Polytech")
+                .developerName("Polytech")
+                .organizationName("Polytech")
                 // Le plan tarifaire est géré par VerifID et non par le Kernel
                 .plan("FREE")
                 .createdAt(LocalDateTime.now())
