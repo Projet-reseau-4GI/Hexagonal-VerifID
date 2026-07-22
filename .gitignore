@@ -43,3 +43,4 @@ src/main/resources/application.properties
 .env.local
 *.env
 KSM_Kernel_Layer/
+.kiro/

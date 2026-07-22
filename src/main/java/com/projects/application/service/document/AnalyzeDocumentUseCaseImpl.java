@@ -118,6 +118,10 @@ public class AnalyzeDocumentUseCaseImpl implements AnalyzeDocumentUseCase {
                 .flatMap(response -> logVerification(response, organizationId).thenReturn(response));
     }
 
+    private static final Set<String> KNOWN_DOC_TYPES = Set.of(
+            "ID_CARD", "PASSPORT", "DRIVER_LICENSE",
+            "VEHICLE_REGISTRATION", "TAX_ID", "BUSINESS_REGISTRATION");
+
     private DocumentAnalysisResponse buildAnalysisResponse(String front, String back,
             Map<String, String> geminiFields,
             String rawCombined) {
@@ -126,50 +130,90 @@ public class AnalyzeDocumentUseCaseImpl implements AnalyzeDocumentUseCase {
         String docType = fields.getOrDefault("documentType", "UNKNOWN");
         String issuingCountry = fields.getOrDefault("issuingCountry", "UNKNOWN");
 
+        // Normalise UNKNOWN for types not in the known set
+        if (!KNOWN_DOC_TYPES.contains(docType)) {
+            docType = "UNKNOWN";
+        }
+
         fields.entrySet().removeIf(e -> e.getValue() == null ||
                 e.getValue().equalsIgnoreCase("null") || e.getValue().isBlank());
 
-        LocalDate birthDate = parseDate(fields.get("dateOfBirth"));
-        LocalDate issueDate = parseDate(fields.get("issueDate"));
-        LocalDate expiryDate = parseDate(fields.get("expiryDate"));
+        // ── Validation logic per document type ────────────────────────────────
+        boolean valid;
+        String msg;
 
-        String holderName = buildHolderName(fields);
-        boolean namesValid = fields.get("surname") != null && fields.get("givenNames") != null;
-        boolean isExpired = expiryDate != null && expiryDate.isBefore(LocalDate.now());
-        boolean hasDocNumber = fields.get("documentNumber") != null;
-        boolean nomencValid = validateNomenclature(issuingCountry, docType, fields.get("documentNumber"));
-
-        boolean valid = !isExpired && namesValid && !docType.equals("UNKNOWN") && hasDocNumber && nomencValid;
-
-        StringBuilder msg = new StringBuilder();
-        if (valid) {
-            msg.append("Document valide (Analyse Gemini)");
+        if ("UNKNOWN".equals(docType)) {
+            valid = false;
+            msg = "Type de document non reconnu";
+        } else if ("VEHICLE_REGISTRATION".equals(docType)) {
+            boolean hasRegNum = fields.get("registrationNumber") != null;
+            boolean hasChassis = fields.get("chassisNumber") != null;
+            boolean hasOwner = fields.get("ownerName") != null;
+            valid = hasRegNum && hasChassis && hasOwner;
+            msg = valid ? "Carte grise valide (Analyse Gemini)"
+                    : buildMissingFieldsMsg("Carte grise",
+                            hasRegNum ? null : "registrationNumber",
+                            hasChassis ? null : "chassisNumber",
+                            hasOwner ? null : "ownerName");
+        } else if ("TAX_ID".equals(docType)) {
+            boolean hasTaxId = fields.get("taxIdNumber") != null;
+            boolean hasTaxpayer = fields.get("taxpayerName") != null;
+            valid = hasTaxId && hasTaxpayer;
+            msg = valid ? "NIU valide (Analyse Gemini)"
+                    : buildMissingFieldsMsg("NIU",
+                            hasTaxId ? null : "taxIdNumber",
+                            hasTaxpayer ? null : "taxpayerName");
+        } else if ("BUSINESS_REGISTRATION".equals(docType)) {
+            boolean hasRccm = fields.get("rccmNumber") != null;
+            boolean hasCompany = fields.get("companyName") != null;
+            valid = hasRccm && hasCompany;
+            msg = valid ? "RCCM valide (Analyse Gemini)"
+                    : buildMissingFieldsMsg("RCCM",
+                            hasRccm ? null : "rccmNumber",
+                            hasCompany ? null : "companyName");
         } else {
-            if (docType.equals("UNKNOWN"))
-                msg.append("Type inconnu. ");
-            if (!namesValid)
-                msg.append("Noms manquants. ");
-            if (!hasDocNumber)
-                msg.append("Numéro manquant. ");
-            else if (!nomencValid)
-                msg.append("Format du numéro invalide pour ").append(issuingCountry).append(". ");
-            if (isExpired)
-                msg.append("Document expiré. ");
-            if (msg.length() == 0)
-                msg.append("Document non conforme.");
+            // ID_CARD, PASSPORT, DRIVER_LICENSE — classic identity logic
+            LocalDate birthDate = parseDate(fields.get("dateOfBirth"));
+            LocalDate issueDate = parseDate(fields.get("issueDate"));
+            LocalDate expiryDate = parseDate(fields.get("expiryDate"));
+
+            boolean namesValid = fields.get("surname") != null && fields.get("givenNames") != null;
+            boolean isExpired = expiryDate != null && expiryDate.isBefore(LocalDate.now());
+            boolean hasDocNumber = fields.get("documentNumber") != null;
+            boolean nomencValid = validateNomenclature(issuingCountry, docType, fields.get("documentNumber"));
+
+            valid = !isExpired && namesValid && hasDocNumber && nomencValid;
+            StringBuilder sb = new StringBuilder();
+            if (valid) {
+                sb.append("Document valide (Analyse Gemini)");
+            } else {
+                if (!namesValid) sb.append("Noms manquants. ");
+                if (!hasDocNumber) sb.append("Numéro manquant. ");
+                else if (!nomencValid) sb.append("Format du numéro invalide pour ").append(issuingCountry).append(". ");
+                if (isExpired) sb.append("Document expiré. ");
+                if (sb.length() == 0) sb.append("Document non conforme.");
+            }
+            msg = sb.toString().trim();
         }
 
-        double confidence = 0.9;
-        if (!namesValid || !hasDocNumber)
-            confidence = 0.5;
-        else if (!nomencValid)
-            confidence = 0.6;
+        double confidence = valid ? 0.9 : 0.5;
+
+        // Build holderName for display — works for all types
+        String holderName = buildHolderName(fields);
+
+        // Parse dates for identity docs (null for non-identity docs)
+        LocalDate birthDate = parseDate(fields.get("dateOfBirth"));
+        LocalDate issueDate = parseDate(fields.getOrDefault("issueDate", fields.get("circulationDate")));
+        LocalDate expiryDate = parseDate(fields.get("expiryDate"));
 
         DocumentAnalysisResponse response = DocumentAnalysisResponse.builder()
                 .documentType(docType).issuingCountry(issuingCountry)
-                .documentNumber(fields.get("documentNumber")).holderName(holderName)
+                .documentNumber(fields.getOrDefault("documentNumber",
+                        fields.getOrDefault("registrationNumber",
+                                fields.getOrDefault("taxIdNumber", fields.get("rccmNumber")))))
+                .holderName(holderName)
                 .dateOfBirth(birthDate).issueDate(issueDate).expirationDate(expiryDate)
-                .isValid(valid).validationMessage(msg.toString().trim())
+                .isValid(valid).validationMessage(msg)
                 .confidenceScore(confidence).hasUncertainty(confidence < 0.6)
                 .additionalFields(buildAdditionalFields(fields)).rawExtractedText(rawCombined)
                 .build();
@@ -181,6 +225,14 @@ public class AnalyzeDocumentUseCaseImpl implements AnalyzeDocumentUseCase {
             response.setValidationMessage(response.getValidationMessage() + " (Format: " + summary + ")");
         }
         return response;
+    }
+
+    /** Build a missing-fields error message for non-identity document types. */
+    private String buildMissingFieldsMsg(String docLabel, String... missingFields) {
+        String missing = Arrays.stream(missingFields)
+                .filter(Objects::nonNull)
+                .collect(Collectors.joining(", "));
+        return docLabel + " invalide — champs manquants : " + missing;
     }
 
     private Mono<Void> logVerification(DocumentAnalysisResponse response, String organizationId) {

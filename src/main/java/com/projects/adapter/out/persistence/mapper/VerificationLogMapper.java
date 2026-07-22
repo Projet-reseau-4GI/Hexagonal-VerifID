@@ -33,21 +33,21 @@ public class VerificationLogMapper {
 
     public VerificationLogEntity toEntity(VerificationLog domain) {
         if (domain == null) return null;
-        return VerificationLogEntity.builder()
-            .id(domain.getId())
-            .platformId(domain.getPlatformId() != null ? UUID.fromString(domain.getPlatformId()) : null)
-            .date(domain.getDate())
-            .docType(domain.getDocType())
-            .status(domain.getStatus())
-            .reason(domain.getReason())
-            .confidence(domain.getConfidence())
-            .processingTimeMs(domain.getProcessingTimeMs())
-            .documentNumber(domain.getDocumentNumber())
-            .holderName(domain.getHolderName())
-            .dateOfBirth(domain.getDateOfBirth())
-            .issueDate(domain.getIssueDate())
-            .expiryDate(domain.getExpiryDate())
-            .additionalFields(domain.getAdditionalFields())
-            .build();
+        VerificationLogEntity entity = new VerificationLogEntity();
+        entity.setId(domain.getId());
+        entity.setPlatformId(domain.getPlatformId() != null ? UUID.fromString(domain.getPlatformId()) : null);
+        entity.setDate(domain.getDate());
+        entity.setDocType(domain.getDocType());
+        entity.setStatus(domain.getStatus());
+        entity.setReason(domain.getReason());
+        entity.setConfidence(domain.getConfidence());
+        entity.setProcessingTimeMs(domain.getProcessingTimeMs());
+        entity.setDocumentNumber(domain.getDocumentNumber());
+        entity.setHolderName(domain.getHolderName());
+        entity.setDateOfBirth(domain.getDateOfBirth());
+        entity.setIssueDate(domain.getIssueDate());
+        entity.setExpiryDate(domain.getExpiryDate());
+        entity.setAdditionalFields(domain.getAdditionalFields());
+        return entity;
     }
 }

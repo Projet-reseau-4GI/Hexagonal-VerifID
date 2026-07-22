@@ -3,7 +3,10 @@ package com.projects.config;
 import com.projects.adapter.out.security.SecurityUtils;
 import com.projects.application.port.out.OrganizationRepositoryPort;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.annotation.Order;
+import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
@@ -12,12 +15,15 @@ import reactor.core.publisher.Mono;
 
 /**
  * Filtre WebFlux qui valide la clé API pour les endpoints documents.
+ * Retourne HTTP 401 avec un corps JSON si la clé est absente, invalide ou inactive.
  */
 @Component
+@Order(-90)
 @RequiredArgsConstructor
 public class ApiKeyAuthenticationFilter implements WebFilter {
 
     private static final String API_KEY_HEADER = "X-API-KEY";
+    private static final byte[] INVALID_KEY_BODY = "{\"error\":\"INVALID_API_KEY\",\"message\":\"Missing or invalid API key\"}".getBytes();
 
     private final OrganizationRepositoryPort apiKeyRepository;
 
@@ -36,22 +42,25 @@ public class ApiKeyAuthenticationFilter implements WebFilter {
         }
 
         if (apiKey == null || apiKey.isEmpty()) {
-            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-            return exchange.getResponse().setComplete();
+            return writeUnauthorized(exchange);
         }
 
         String hashedApiKey = SecurityUtils.hashApiKey(apiKey);
 
         return apiKeyRepository.findByApiKeyHash(hashedApiKey)
-                .filter(key -> Boolean.TRUE.equals(key.getApiKeyActive()))
-                .flatMap(key ->
+                .filter(org -> Boolean.TRUE.equals(org.getApiKeyActive()))
+                .flatMap(org ->
                      chain.filter(exchange)
                           .contextWrite(ctx -> ReactiveTenantContext
-                              .putOrganizationId(ctx, key.getId().toString()))
+                              .putOrganizationId(ctx, org.getId().toString()))
                 )
-                .switchIfEmpty(Mono.defer(() -> {
-                    exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-                    return exchange.getResponse().setComplete();
-                }));
+                .switchIfEmpty(Mono.defer(() -> writeUnauthorized(exchange)));
+    }
+
+    private Mono<Void> writeUnauthorized(ServerWebExchange exchange) {
+        exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+        exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        DataBuffer buffer = exchange.getResponse().bufferFactory().wrap(INVALID_KEY_BODY);
+        return exchange.getResponse().writeWith(Mono.just(buffer));
     }
 }

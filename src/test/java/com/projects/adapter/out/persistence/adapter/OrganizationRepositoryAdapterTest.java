@@ -30,7 +30,7 @@ class OrganizationRepositoryAdapterTest {
                 .name("Polytech")
                 .displayName("Polytech")
                 // Le plan tarifaire est géré par VerifID et non par le Kernel
-                .plan("FREEMIUM")
+                .plan("FREE")
                 .createdAt(LocalDateTime.now())
                 .lastSyncedAt(LocalDateTime.now())
                 .apiKeyActive(true)
@@ -44,7 +44,7 @@ class OrganizationRepositoryAdapterTest {
                 .expectNextMatches(savedOrg -> {
                     return savedOrg.getId().equals(mockOrg.getId()) &&
                            "tadidajalil01@gmail.com".equals(savedOrg.getEmail()) &&
-                           "FREEMIUM".equals(savedOrg.getPlan());
+                           "FREE".equals(savedOrg.getPlan());
                 })
                 .verifyComplete();
     }

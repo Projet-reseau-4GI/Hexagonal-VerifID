@@ -35,7 +35,7 @@ public class Organization {
 
     /**
      * Plan tarifaire VerifID.
-     * Par défaut FREEMIUM — ne peut être modifié que via le webhook Stripe/upgrade.
+     * Par défaut FREE — ne peut être modifié que via le webhook Stripe/upgrade.
      */
     private String plan;
 
@@ -117,7 +117,7 @@ public class Organization {
         private String name;
         private String displayName;
         private String logoUri;
-        private String plan = "FREEMIUM";
+        private String plan = "FREE";
         private Integer dailyVerificationCount = 0;
         private LocalDateTime dailyCountResetAt;
         private LocalDateTime createdAt;

@@ -7,6 +7,7 @@ import com.projects.application.port.out.OrganizationRepositoryPort;
 import com.projects.application.port.out.EmailServicePort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -22,6 +23,7 @@ public class ManageApiKeyUseCaseImpl implements ManageApiKeyUseCase {
 
     private final OrganizationRepositoryPort organizationRepository;
     private final EmailServicePort emailServicePort;
+    private final ReactiveStringRedisTemplate redisTemplate;
     private final SecureRandom secureRandom = new SecureRandom();
 
     @Override
@@ -29,15 +31,11 @@ public class ManageApiKeyUseCaseImpl implements ManageApiKeyUseCase {
         return organizationRepository.findById(organizationId)
                 .switchIfEmpty(Mono.error(new RuntimeException("Organisation introuvable")))
                 .flatMap(org -> {
-                    // Générer une clé brute (ex: vf_live_xxxx)
                     byte[] randomBytes = new byte[32];
                     secureRandom.nextBytes(randomBytes);
                     String rawApiKey = "vf_id_" + Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
-
-                    // Hasher la clé
                     String hashedKey = SecurityUtils.hashApiKey(rawApiKey);
 
-                    // Mettre à jour l'organisation
                     org.setApiKeyHash(hashedKey);
                     org.setApiKeyLabel(label != null && !label.isBlank() ? label : "Default Key");
                     org.setApiKeyActive(true);
@@ -47,12 +45,48 @@ public class ManageApiKeyUseCaseImpl implements ManageApiKeyUseCase {
                             .flatMap(savedOrg -> emailServicePort
                                     .sendApiKeyCreatedNotification(savedOrg.getEmail(), savedOrg.getDisplayName())
                                     .thenReturn(savedOrg))
-                            .map(savedOrg -> ApiKeyResponse.builder()
-                                    .label(savedOrg.getApiKeyLabel())
-                                    .apiKey(rawApiKey) // Retournée EN CLAIR une seule fois
-                                    .active(savedOrg.getApiKeyActive())
-                                    .createdAt(savedOrg.getApiKeyCreatedAt())
-                                    .build());
+                            .map(savedOrg -> new ApiKeyResponse(
+                                    savedOrg.getApiKeyLabel(),
+                                    rawApiKey, // Retournée EN CLAIR une seule fois
+                                    savedOrg.getApiKeyActive(),
+                                    savedOrg.getApiKeyCreatedAt()
+                            ));
+                });
+    }
+
+    @Override
+    public Mono<ApiKeyResponse> rotateApiKey(UUID organizationId) {
+        return organizationRepository.findById(organizationId)
+                .switchIfEmpty(Mono.error(new RuntimeException("Organisation introuvable")))
+                .flatMap(org -> {
+                    // Invalider l'ancienne clé dans Redis avant de la remplacer
+                    String oldHash = org.getApiKeyHash();
+                    Mono<Boolean> evictOld = (oldHash != null)
+                            ? redisTemplate.delete("apikey:" + oldHash).thenReturn(true)
+                            : Mono.just(true);
+
+                    return evictOld.flatMap(ignored -> {
+                        byte[] randomBytes = new byte[32];
+                        secureRandom.nextBytes(randomBytes);
+                        String newRawKey = "vf_id_" + Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
+                        String newHash = SecurityUtils.hashApiKey(newRawKey);
+
+                        org.setApiKeyHash(newHash);
+                        org.setApiKeyLabel(org.getApiKeyLabel() != null ? org.getApiKeyLabel() : "Default Key");
+                        org.setApiKeyActive(true);
+                        org.setApiKeyCreatedAt(LocalDateTime.now());
+
+                        return organizationRepository.save(org)
+                                .map(savedOrg -> {
+                                    log.info("[apikey] Rotation effectuée pour org={}", organizationId);
+                                    return new ApiKeyResponse(
+                                            savedOrg.getApiKeyLabel(),
+                                            newRawKey,
+                                            true,
+                                            savedOrg.getApiKeyCreatedAt()
+                                    );
+                                });
+                    });
                 });
     }
 
@@ -61,12 +95,19 @@ public class ManageApiKeyUseCaseImpl implements ManageApiKeyUseCase {
         return organizationRepository.findById(organizationId)
                 .switchIfEmpty(Mono.error(new RuntimeException("Organisation introuvable")))
                 .flatMap(org -> {
+                    String hash = org.getApiKeyHash();
                     org.setApiKeyActive(false);
-                    return organizationRepository.save(org)
+
+                    Mono<Boolean> evict = (hash != null)
+                            ? redisTemplate.delete("apikey:" + hash).thenReturn(true)
+                            : Mono.just(true);
+
+                    return evict.then(organizationRepository.save(org))
                             .flatMap(savedOrg -> emailServicePort
                                     .sendApiKeyDeletedNotification(savedOrg.getEmail(), savedOrg.getDisplayName())
                                     .thenReturn(savedOrg));
                 })
+                .doOnSuccess(o -> log.info("[apikey] Clé révoquée pour org={}", organizationId))
                 .then();
     }
 }

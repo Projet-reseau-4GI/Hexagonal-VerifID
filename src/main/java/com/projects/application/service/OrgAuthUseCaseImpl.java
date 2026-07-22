@@ -66,7 +66,7 @@ public class OrgAuthUseCaseImpl implements OrgAuthUseCase {
                                     ? request.getDisplayName()
                                     : request.getOrganizationName())
                             .logoUri(request.getLogoUri())
-                            .plan("FREEMIUM")
+                            .plan("FREE")
                             .status("PENDING")
                             .isEmailVerified(false)
                             .passwordHash(passwordHash)
@@ -249,7 +249,7 @@ public class OrgAuthUseCaseImpl implements OrgAuthUseCase {
                                         .name(kernelOrg.getShortName() != null ? kernelOrg.getShortName() : "Org")
                                         .displayName(kernelOrg.getDisplayName() != null ? kernelOrg.getDisplayName() : kernelOrg.getShortName())
                                         .logoUri(kernelOrg.getLogoUri())
-                                        .plan("FREEMIUM")
+                                        .plan("FREE")
                                         .status("ACTIVE")
                                         .isEmailVerified(true) // Déjà vérifié via Kernel
                                         // On génère un mot de passe local aléatoire car on gère l'auth via Kernel

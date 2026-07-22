@@ -32,4 +32,14 @@ public class VerificationLogEntity {
     @Column("issue_date") private String issueDate;
     @Column("expiry_date") private String expiryDate;
     @Column("additional_fields") private String additionalFields;
+
+    public String getDateOfBirth() { return dateOfBirth; }
+    public String getIssueDate() { return issueDate; }
+    public String getExpiryDate() { return expiryDate; }
+    public String getAdditionalFields() { return additionalFields; }
+
+    public void setDateOfBirth(String dateOfBirth) { this.dateOfBirth = dateOfBirth; }
+    public void setIssueDate(String issueDate) { this.issueDate = issueDate; }
+    public void setExpiryDate(String expiryDate) { this.expiryDate = expiryDate; }
+    public void setAdditionalFields(String additionalFields) { this.additionalFields = additionalFields; }
 }

@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS organizations (
     name                     VARCHAR(255),
     display_name             VARCHAR(255),
     logo_uri                 TEXT,
-    plan                     VARCHAR(50)  DEFAULT 'FREEMIUM',
+    plan                     VARCHAR(50)  DEFAULT 'FREE',
     daily_verification_count INTEGER      DEFAULT 0,
     daily_count_reset_at     TIMESTAMP,
     created_at               TIMESTAMP    DEFAULT NOW(),
@@ -25,6 +25,11 @@ CREATE TABLE IF NOT EXISTS organizations (
 
 CREATE INDEX IF NOT EXISTS idx_organizations_email ON organizations(email);
 CREATE INDEX IF NOT EXISTS idx_organizations_apikey ON organizations(api_key_hash);
+
+-- =========================================================
+-- Migration : FREEMIUM → FREE (idempotente)
+-- =========================================================
+UPDATE organizations SET plan = 'FREE' WHERE plan = 'FREEMIUM';
 
 -- =========================================================
 -- Colonnes d'authentification locale (mode autonome, sans Kernel)
@@ -63,6 +68,15 @@ CREATE TABLE IF NOT EXISTS verification_logs (
 -- Indexes
 -- =========================================================
 CREATE INDEX IF NOT EXISTS idx_verification_logs_org    ON verification_logs(platform_id, date DESC);
+-- Index sur date seul pour exports cross-orgs et dashboard global
+CREATE INDEX IF NOT EXISTS idx_verification_logs_date   ON verification_logs(date DESC);
+-- Index sur status pour filtrage rapide (taux de rejet)
+CREATE INDEX IF NOT EXISTS idx_verification_logs_status ON verification_logs(status);
+
+-- =========================================================
+-- Index organisations pour admin monitoring
+-- =========================================================
+CREATE INDEX IF NOT EXISTS idx_org_plan_status ON organizations(plan, status);
 
 -- =========================================================
 -- Table : Administrateurs (Super Admins) pour l'accès aux stats
@@ -80,3 +94,21 @@ CREATE TABLE IF NOT EXISTS admins (
 );
 
 CREATE INDEX IF NOT EXISTS idx_admins_email ON admins(email);
+
+-- =========================================================
+-- Table : Tarification des forfaits (Plan Pricing)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS plan_pricing (
+    plan_id       VARCHAR(50) PRIMARY KEY,
+    price         DECIMAL(10, 2) NOT NULL,
+    currency      VARCHAR(10) NOT NULL DEFAULT 'XOF',
+    updated_at    TIMESTAMP DEFAULT NOW()
+);
+
+-- Insertion des prix par défaut (si la table vient d'être créée)
+INSERT INTO plan_pricing (plan_id, price, currency) 
+VALUES 
+    ('FREE', 0.00, 'XOF'),
+    ('PREMIUM', 5000.00, 'XOF'),
+    ('MAX', 15000.00, 'XOF')
+ON CONFLICT (plan_id) DO NOTHING;

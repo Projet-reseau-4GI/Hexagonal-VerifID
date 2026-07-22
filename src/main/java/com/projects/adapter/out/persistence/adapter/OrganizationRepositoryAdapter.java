@@ -7,6 +7,7 @@ import com.projects.domain.model.Organization;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
@@ -65,6 +66,12 @@ public class OrganizationRepositoryAdapter implements OrganizationRepositoryPort
                 .map(this::toDomain);
     }
 
+    @Override
+    public Flux<Organization> findAll() {
+        return repository.findAll()
+                .map(this::toDomain);
+    }
+
     // ── Mappers ─────────────────────────────────────────────────────────────────
 
     private OrganizationEntity toEntity(Organization org) {
@@ -74,7 +81,7 @@ public class OrganizationRepositoryAdapter implements OrganizationRepositoryPort
                 .name(org.getName())
                 .displayName(org.getDisplayName())
                 .logoUri(org.getLogoUri())
-                .plan(org.getPlan() != null ? org.getPlan() : "FREEMIUM")
+                .plan(org.getPlan() != null ? org.getPlan() : "FREE")
                 .dailyVerificationCount(org.getDailyVerificationCount() != null ? org.getDailyVerificationCount() : 0)
                 .dailyCountResetAt(org.getDailyCountResetAt())
                 .createdAt(org.getCreatedAt() != null ? org.getCreatedAt() : LocalDateTime.now())

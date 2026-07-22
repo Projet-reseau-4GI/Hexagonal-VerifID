@@ -35,7 +35,6 @@
     <name>network</name>
     <description>Validation des pièces d'identités</description>
 
-    <!-- Java version used by the project -->
     <properties>
         <java.version>21</java.version>
     </properties>
@@ -241,7 +240,6 @@
     <!-- ========================= -->
     <build>
         <plugins>
-
             <!-- Maven Compiler Plugin:
                  Handles Java compilation and Lombok annotation processing -->
             <plugin>

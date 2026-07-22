@@ -17,6 +17,12 @@ public interface ManageApiKeyUseCase {
     Mono<ApiKeyResponse> generateApiKey(UUID organizationId, String label);
 
     /**
+     * Rotation de la clé API : génère une nouvelle clé, invalide l'ancienne.
+     * @return la nouvelle clé en clair (une seule fois)
+     */
+    Mono<ApiKeyResponse> rotateApiKey(UUID organizationId);
+
+    /**
      * Révocation de la clé API pour l'organisation.
      */
     Mono<Void> revokeApiKey(UUID organizationId);

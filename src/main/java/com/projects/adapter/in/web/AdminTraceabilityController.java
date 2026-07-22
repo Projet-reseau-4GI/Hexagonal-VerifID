@@ -1,19 +1,32 @@
 package com.projects.adapter.in.web;
 
+import com.projects.application.port.in.billing.CheckQuotaUseCase;
 import com.projects.application.port.out.OrganizationRepositoryPort;
 import com.projects.application.port.out.VerificationLogRepositoryPort;
+import com.projects.application.service.admin.ExportLogsService;
+import com.projects.adapter.in.web.dto.OrganizationSummaryDto;
+import com.projects.domain.model.Organization;
+import com.projects.domain.model.Plan;
 import com.projects.domain.model.VerificationLog;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -36,8 +49,157 @@ public class AdminTraceabilityController {
 
         private final OrganizationRepositoryPort organizationRepository;
         private final VerificationLogRepositoryPort verificationLogRepository;
+        private final CheckQuotaUseCase checkQuotaUseCase;
+        private final ExportLogsService exportLogsService;
 
-        // ─── API KEYS ────────────────────────────────────────────────────────────
+        // ─── ORGANISATIONS LIST (NEW) ─────────────────────────────────────────────
+
+        @GetMapping("/organizations")
+        @Operation(summary = "Liste paginée des organisations avec quota et statut API key")
+        public Mono<ResponseEntity<java.util.List<OrganizationSummaryDto>>> listOrganizations(
+                        @RequestParam(defaultValue = "0") int page,
+                        @RequestParam(defaultValue = "20") int size) {
+                int safeSize = Math.min(size, 100);
+                return organizationRepository.findAll()
+                                .skip((long) page * safeSize)
+                                .take(safeSize)
+                                .flatMap(org -> enrichWithQuota(org))
+                                .collectList()
+                                .map(ResponseEntity::ok);
+        }
+
+        @GetMapping("/organizations/{orgId}")
+        @Operation(summary = "Détail d'une organisation (admin)")
+        public Mono<ResponseEntity<OrganizationSummaryDto>> getOrganization(@PathVariable String orgId) {
+                return organizationRepository.findById(UUID.fromString(orgId))
+                                .flatMap(org -> enrichWithQuota(org))
+                                .map(ResponseEntity::ok)
+                                .defaultIfEmpty(ResponseEntity.notFound().build());
+        }
+
+        private Mono<OrganizationSummaryDto> enrichWithQuota(Organization org) {
+                return checkQuotaUseCase.getQuotaStatus(org.getId().toString())
+                                .map(qs -> new OrganizationSummaryDto(
+                                                org.getId(),
+                                                org.getName(),
+                                                org.getDisplayName(),
+                                                org.getEmail(),
+                                                org.getPlan(),
+                                                qs.consumed(),
+                                                qs.limit(),
+                                                Boolean.TRUE.equals(org.getApiKeyActive()),
+                                                org.getStatus(),
+                                                org.getCreatedAt()))
+                                .onErrorReturn(new OrganizationSummaryDto(
+                                                org.getId(),
+                                                org.getName(),
+                                                org.getDisplayName(),
+                                                org.getEmail(),
+                                                org.getPlan(),
+                                                0L,
+                                                Plan.fromString(org.getPlan()).getDailyLimit(),
+                                                Boolean.TRUE.equals(org.getApiKeyActive()),
+                                                org.getStatus(),
+                                                org.getCreatedAt()));
+        }
+
+        // ─── ORGANISATION LOGS (PAGINATED, NEW) ──────────────────────────────────
+
+        @GetMapping("/organizations/{orgId}/logs")
+        @Operation(summary = "Logs de vérification paginés d'une organisation")
+        public Mono<ResponseEntity<java.util.List<VerificationLogResponse>>> getOrgLogs(
+                        @PathVariable String orgId,
+                        @RequestParam(defaultValue = "0") int page,
+                        @RequestParam(defaultValue = "20") int size) {
+                int safeSize = Math.min(size, 100);
+                return verificationLogRepository.findByPlatformId(UUID.fromString(orgId))
+                                .sort((a, b) -> b.getDate().compareTo(a.getDate()))
+                                .skip((long) page * safeSize)
+                                .take(safeSize)
+                                .map(this::toResponse)
+                                .collectList()
+                                .map(ResponseEntity::ok);
+        }
+
+        // ─── EXPORT LOGS (NEW) ───────────────────────────────────────────────────
+
+        @GetMapping("/organizations/{orgId}/export")
+        @Operation(summary = "Export CSV ou PDF des logs d'une organisation sur une période")
+        public Mono<ResponseEntity<byte[]>> exportLogs(
+                        @PathVariable String orgId,
+                        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
+                        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate,
+                        @RequestParam(defaultValue = "csv") String format) {
+                UUID orgUuid = UUID.fromString(orgId);
+                if ("pdf".equalsIgnoreCase(format)) {
+                        return exportLogsService.exportPdf(orgUuid, startDate, endDate)
+                                .map(bytes -> ResponseEntity.ok()
+                                        .header(HttpHeaders.CONTENT_DISPOSITION,
+                                                "attachment; filename=\"logs-" + orgId + ".pdf\"")
+                                        .contentType(MediaType.APPLICATION_PDF)
+                                        .body(bytes));
+                }
+                return exportLogsService.exportCsv(orgUuid, startDate, endDate)
+                        .map(bytes -> ResponseEntity.ok()
+                                .header(HttpHeaders.CONTENT_DISPOSITION,
+                                        "attachment; filename=\"logs-" + orgId + ".csv\"")
+                                .contentType(MediaType.parseMediaType("text/csv"))
+                                .body(bytes));
+        }
+
+        // ─── GLOBAL DASHBOARD (ENHANCED) ─────────────────────────────────────────
+
+        @GetMapping("/dashboard")
+        @Operation(summary = "Métriques globales : organisations actives, vérifications du jour, taux de rejet 7j")
+        public Mono<ResponseEntity<Map<String, Object>>> getGlobalDashboard() {
+                LocalDateTime startOfDay = LocalDateTime.now(ZoneOffset.UTC).with(java.time.LocalTime.MIN);
+                LocalDateTime sevenDaysAgo = LocalDateTime.now(ZoneOffset.UTC).minusDays(7);
+
+                return Mono.zip(
+                        // Total active orgs
+                        organizationRepository.findAll()
+                                .filter(o -> "ACTIVE".equals(o.getStatus()))
+                                .count(),
+                        // Verifications today (all orgs)
+                        verificationLogRepository.findAll()
+                                .filter(vl -> vl.getDate() != null && !vl.getDate().isBefore(startOfDay))
+                                .count(),
+                        // Rejected in last 7 days
+                        verificationLogRepository.findAll()
+                                .filter(vl -> vl.getDate() != null && !vl.getDate().isBefore(sevenDaysAgo)
+                                        && "REJECTED".equals(vl.getStatus()))
+                                .count(),
+                        // Total in last 7 days
+                        verificationLogRepository.findAll()
+                                .filter(vl -> vl.getDate() != null && !vl.getDate().isBefore(sevenDaysAgo))
+                                .count()
+                ).flatMap(tuple -> {
+                        long activeOrgs = tuple.getT1();
+                        long verToday = tuple.getT2();
+                        long rejected7d = tuple.getT3();
+                        long total7d = tuple.getT4();
+                        double rejectRate = total7d > 0 ? (double) rejected7d / total7d * 100.0 : 0.0;
+
+                        // Plan distribution
+                        return organizationRepository.findAll()
+                                .filter(o -> "ACTIVE".equals(o.getStatus()))
+                                .collectMultimap(o -> o.getPlan() != null ? o.getPlan() : "UNKNOWN",
+                                        o -> o.getId())
+                                .map(planMap -> {
+                                        Map<String, Object> planDist = new LinkedHashMap<>();
+                                        planMap.forEach((plan, ids) -> planDist.put(plan, ids.size()));
+
+                                        Map<String, Object> body = new LinkedHashMap<>();
+                                        body.put("activeOrganizations", activeOrgs);
+                                        body.put("verificationsToday", verToday);
+                                        body.put("planDistribution", planDist);
+                                        body.put("rejectionRateLast7Days", String.format("%.1f%%", rejectRate));
+                                        body.put("rejectedLast7Days", rejected7d);
+                                        body.put("totalLast7Days", total7d);
+                                        return ResponseEntity.ok(body);
+                                });
+                });
+        }
 
         @GetMapping("/organizations/{orgId}/api-key")
         @Operation(summary = "Afficher la clé API d'une organisation")

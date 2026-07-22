@@ -1,6 +1,10 @@
 package com.projects.exception;
 
 import com.projects.adapter.in.web.dto.ErrorResponse;
+import com.projects.exception.AccountSuspendedException;
+import com.projects.exception.FileTooLargeException;
+import com.projects.exception.OtpExpiredException;
+import com.projects.exception.QuotaExceededException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -10,6 +14,9 @@ import reactor.core.publisher.Mono;
 
 import lombok.extern.slf4j.Slf4j;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import com.projects.exception.ExternalServiceUnavailableException;
 
 @RestControllerAdvice
@@ -69,6 +76,74 @@ public class GlobalExceptionHandler {
                                                 .error(status.getReasonPhrase())
                                                 .message(ex.getMessage() != null ? ex.getMessage()
                                                                 : "Invalid request")
+                                                .path(exchange.getRequest().getPath().value())
+                                                .build()));
+        }
+
+        @ExceptionHandler(QuotaExceededException.class)
+        public Mono<ResponseEntity<Map<String, Object>>> handleQuotaExceeded(
+                        QuotaExceededException ex, ServerWebExchange exchange) {
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("error", "QUOTA_EXCEEDED");
+                body.put("message", ex.getMessage());
+                if (ex.getQuotaStatus() != null) {
+                        body.put("consumed", ex.getQuotaStatus().consumed());
+                        body.put("limit", ex.getQuotaStatus().limit());
+                        body.put("resetAt", ex.getQuotaStatus().resetAt() != null
+                                ? ex.getQuotaStatus().resetAt().toString() : null);
+                }
+                return Mono.just(ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(body));
+        }
+
+        @ExceptionHandler(FileTooLargeException.class)
+        public Mono<ResponseEntity<Map<String, Object>>> handleFileTooLarge(
+                        FileTooLargeException ex, ServerWebExchange exchange) {
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("error", "FILE_TOO_LARGE");
+                body.put("maxSizeBytes", ex.getMaxSizeBytes());
+                body.put("plan", ex.getPlan());
+                body.put("message", ex.getMessage());
+                return Mono.just(ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(body));
+        }
+
+        @ExceptionHandler(AccountSuspendedException.class)
+        public Mono<ResponseEntity<ErrorResponse>> handleAccountSuspended(
+                        AccountSuspendedException ex, ServerWebExchange exchange) {
+                return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN)
+                                .body(ErrorResponse.builder()
+                                                .timestamp(LocalDateTime.now())
+                                                .status(HttpStatus.FORBIDDEN.value())
+                                                .error("ACCOUNT_SUSPENDED")
+                                                .message(ex.getMessage())
+                                                .path(exchange.getRequest().getPath().value())
+                                                .build()));
+        }
+
+        @ExceptionHandler(OtpExpiredException.class)
+        public Mono<ResponseEntity<ErrorResponse>> handleOtpExpired(
+                        OtpExpiredException ex, ServerWebExchange exchange) {
+                return Mono.just(ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                                .body(ErrorResponse.builder()
+                                                .timestamp(LocalDateTime.now())
+                                                .status(HttpStatus.BAD_REQUEST.value())
+                                                .error("OTP_EXPIRED")
+                                                .message(ex.getMessage())
+                                                .path(exchange.getRequest().getPath().value())
+                                                .build()));
+        }
+
+        @ExceptionHandler(IllegalStateException.class)
+        public Mono<ResponseEntity<ErrorResponse>> handleIllegalStateException(
+                        IllegalStateException ex, ServerWebExchange exchange) {
+                HttpStatus status = ex.getMessage() != null && ex.getMessage().toLowerCase().contains("suspendu")
+                                ? HttpStatus.FORBIDDEN
+                                : HttpStatus.CONFLICT;
+                return Mono.just(ResponseEntity.status(status)
+                                .body(ErrorResponse.builder()
+                                                .timestamp(LocalDateTime.now())
+                                                .status(status.value())
+                                                .error(status.getReasonPhrase())
+                                                .message(ex.getMessage())
                                                 .path(exchange.getRequest().getPath().value())
                                                 .build()));
         }

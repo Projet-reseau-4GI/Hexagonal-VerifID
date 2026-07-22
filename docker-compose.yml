@@ -1,53 +1,154 @@
-# Déploiement INDÉPENDANT de VerifID, branché sur l'infra partagée iwm (réseau iwm-vm-network).
-# Prérequis : la stack iwm (docker-compose.vm.yml) tourne déjà, et la base "verifid" existe :
-#   docker exec -it iwm-postgres psql -U iwm -c "CREATE DATABASE verifid;"
-#
-#   cp .env.example .env   # renseigner les secrets (DB, Gemini, Brevo, clé KYC iwm)
-#   docker compose up -d --build
+# ─────────────────────────────────────────────────────────────────────────────
+# VerifID — Déploiement Standalone (Production)
+# ─────────────────────────────────────────────────────────────────────────────
 
 services:
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Reverse Proxy (Traefik) - Gestion SSL Automatique
+  # ───────────────────────────────────────────────────────────────────────────
+  traefik:
+    image: traefik:v2.10
+    container_name: verifid-traefik
+    restart: unless-stopped
+    command:
+      - "--api.insecure=false"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      # Redirection HTTP vers HTTPS globale
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      # - "--certificatesresolvers.myresolver.acme.email=postmaster@${PUBLIC_HOST:-example.com}"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "verifid-letsencrypt:/letsencrypt"
+    networks:
+      - verifid-network
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # VerifID Backend
+  # ───────────────────────────────────────────────────────────────────────────
   verifid:
     image: ${VERIFID_IMAGE:-ghcr.io/savhel/hexagonal-verifid:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: verifid-backend
     restart: unless-stopped
+    depends_on:
+      verifid-redis:
+        condition: service_healthy
+      verifid-postgres:
+        condition: service_healthy
     environment:
       SERVER_PORT: "8080"
-      # parsing.api.* fourni via SPRING_APPLICATION_JSON (le relaxed binding PARSING_API_URL
-      # ne résout pas le placeholder @Value("${parsing.api.url}") dans cette app).
-      SPRING_APPLICATION_JSON: '{"parsing":{"api":{"url":"${PARSING_API_URL:-https://parsing.invalid/api}","token":"${PARSING_API_TOKEN:-}"}}}'
-      # --- Base partagée (DB dédiée "verifid") ---
-      SPRING_R2DBC_URL: r2dbc:postgresql://iwm-postgres:5432/${VERIFID_DB_NAME:-verifid}
-      SPRING_R2DBC_USERNAME: ${IWM_DB_USER:-iwm}
-      SPRING_R2DBC_PASSWORD: ${IWM_DB_PASSWORD:?Definir IWM_DB_PASSWORD}
-      # --- Connexion au Kernel iwm ---
-      KERNEL_BASE_URL: http://iwm-app:8080
+      # ── Base de données PostgreSQL locale ──────────────
+      SPRING_R2DBC_URL: r2dbc:postgresql://verifid-postgres:5432/${VERIFID_DB_NAME:-verifid}
+      SPRING_R2DBC_USERNAME: ${VERIFID_DB_USER:-verifid_user}
+      SPRING_R2DBC_PASSWORD: ${VERIFID_DB_PASSWORD:?Définir VERIFID_DB_PASSWORD}
+      SPRING_SQL_INIT_MODE: always
+      # ── Redis ─────────────────────────────────────
+      REDIS_HOST: verifid-redis
+      REDIS_PORT: 6379
+      # ── Connexion au Kernel IWM (Distant) ───────────────────────────────────────────
+      KERNEL_BASE_URL: ${KERNEL_BASE_URL:?Définir KERNEL_BASE_URL distant}
       KERNEL_CLIENT_ID: ${KERNEL_CLIENT_ID:-verifid-backend}
-      KERNEL_API_KEY: ${KERNEL_API_KEY:?Definir KERNEL_API_KEY (secret ClientApplication KYC)}
+      KERNEL_API_KEY: ${KERNEL_API_KEY:?Définir KERNEL_API_KEY}
       KERNEL_JWT_RS256_ENABLED: "true"
-      # --- Kafka partagé (analyse asynchrone KYC) ---
-      KERNEL_KAFKA_ENABLED: "true"
-      KERNEL_KAFKA_BOOTSTRAP_SERVERS: iwm-kafka:29092
-      KERNEL_KAFKA_TOPIC: iwm.events.business
-      KERNEL_KAFKA_GROUP_ID: verifid-file-analysis
-      # --- Intégrations externes (vides = à compléter plus tard) ---
-      # API de parsing OCR (requise par l'app au démarrage ; valeur factice par défaut pour booter).
-      PARSING_API_URL: ${PARSING_API_URL:-https://parsing.invalid/api}
+      # ── Kafka (analyse asynchrone KYC - Distant) ───────────────────────────────────
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka.example.com:9092}
+      KAFKA_CONSUMER_GROUP: ${KAFKA_CONSUMER_GROUP:-verifid-group}
+      # ── OCR Parsing API ───────────────────────────────────────────────────
+      PARSING_API_URL: ${PARSING_API_URL:-https://lcgfy76ct94esfka.aistudio-app.com/layout-parsing}
       PARSING_API_TOKEN: ${PARSING_API_TOKEN:-}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      BREVO_API_KEY: ${BREVO_API_KEY:-}
-      JWT_SECRET: ${JWT_SECRET:?Definir JWT_SECRET}
-      ENCRYPTION_SECRET_KEY: ${ENCRYPTION_SECRET_KEY:?Definir ENCRYPTION_SECRET_KEY (AES-256)}
-    # Routé par Traefik (verifid.<IP>.nip.io) → plus de port hôte.
+      # ── Gemini AI ─────────────────────────────────────────────────────────
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?Définir GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-flash-lite-latest}
+      # ── Email (Brevo) ─────────────────────────────────────────────────────
+      BREVO_API_KEY: ${BREVO_API_KEY:?Définir BREVO_API_KEY}
+      BREVO_SENDER_EMAIL: ${BREVO_SENDER_EMAIL:-noreply@verifid.app}
+      BREVO_SENDER_NAME: ${BREVO_SENDER_NAME:-VerifID}
+      # ── Sécurité (secrets) ─────────────────
+      JWT_SECRET: ${JWT_SECRET:?Définir JWT_SECRET (min 32 caractères)}
+      ENCRYPTION_SECRET_KEY: ${ENCRYPTION_SECRET_KEY:?Définir ENCRYPTION_SECRET_KEY (AES-256)}
+      # ── Rate limiting & quotas ────────────────────────────────────────────
+      APP_RATE_LIMIT_PER_SECOND: ${APP_RATE_LIMIT_PER_SECOND:-10}
+      APP_QUOTA_FREE_LIMIT: "0"
+      APP_QUOTA_PREMIUM_LIMIT: "100"
+      APP_QUOTA_MAX_LIMIT: "1000"
+      # ── Taille de fichier (WebFlux) ───────────────────────────────────────
+      SPRING_WEBFLUX_MULTIPART_MAX_FILE_SIZE: ${SPRING_WEBFLUX_MULTIPART_MAX_FILE_SIZE:-50MB}
+      SPRING_WEBFLUX_MULTIPART_MAX_REQUEST_SIZE: ${SPRING_WEBFLUX_MULTIPART_MAX_REQUEST_SIZE:-50MB}
+      SPRING_CODEC_MAX_IN_MEMORY_SIZE: ${SPRING_CODEC_MAX_IN_MEMORY_SIZE:-50MB}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.verifid.rule=Host(`verifid.${PUBLIC_HOST:-localhost}`)"
-      - "traefik.http.routers.verifid.entrypoints=web"
+      - "traefik.http.routers.verifid.rule=Host(`${PUBLIC_HOST:-verifid.example.com}`)"
+      - "traefik.http.routers.verifid.entrypoints=websecure"
+      - "traefik.http.routers.verifid.tls.certresolver=myresolver"
       - "traefik.http.services.verifid.loadbalancer.server.port=8080"
-      - "traefik.docker.network=iwm-vm-network"
     networks:
-      - iwm
+      - verifid-network
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Base de données PostgreSQL locale (Standalone)
+  # ───────────────────────────────────────────────────────────────────────────
+  verifid-postgres:
+    image: postgres:15-alpine
+    container_name: verifid-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${VERIFID_DB_NAME:-verifid}
+      POSTGRES_USER: ${VERIFID_DB_USER:-verifid_user}
+      POSTGRES_PASSWORD: ${VERIFID_DB_PASSWORD:?Définir VERIFID_DB_PASSWORD}
+    volumes:
+      - verifid-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${VERIFID_DB_USER:-verifid_user} -d ${VERIFID_DB_NAME:-verifid}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - verifid-network
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Redis
+  # ───────────────────────────────────────────────────────────────────────────
+  verifid-redis:
+    image: redis:7-alpine
+    container_name: verifid-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - verifid-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - verifid-network
+
+volumes:
+  verifid-redis-data:
+    driver: local
+  verifid-postgres-data:
+    driver: local
+  verifid-letsencrypt:
+    driver: local
 
 networks:
-  iwm:
-    external: true
-    name: iwm-vm-network
+  verifid-network:
+    driver: bridge

@@ -1,6 +1,7 @@
 package com.projects.application.port.out;
 
 import com.projects.domain.model.Organization;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.UUID;
@@ -38,4 +39,10 @@ public interface OrganizationRepositoryPort {
      * Recherche une organisation par le hash de sa clé API.
      */
     Mono<Organization> findByApiKeyHash(String apiKeyHash);
+
+    /**
+     * Retourne toutes les organisations (utilisé pour les opérations de masse
+     * comme le reset du compteur journalier).
+     */
+    Flux<Organization> findAll();
 }

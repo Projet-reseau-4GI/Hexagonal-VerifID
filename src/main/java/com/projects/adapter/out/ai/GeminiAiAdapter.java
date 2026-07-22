@@ -1,8 +1,10 @@
 package com.projects.adapter.out.ai;
 
 import com.projects.application.port.out.AiAnalysisServicePort;
+import com.projects.exception.ExternalServiceUnavailableException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -14,6 +16,7 @@ import java.util.Map;
 
 /**
  * Infrastructure adapter — implements AiAnalysisServicePort using Google Gemini API.
+ * Protected by Resilience4j circuit breaker "gemini-api".
  */
 @Component
 @Slf4j
@@ -25,32 +28,61 @@ public class GeminiAiAdapter implements AiAnalysisServicePort {
 
     public GeminiAiAdapter(WebClient.Builder webClientBuilder,
                            @Value("${gemini.api.key:}") String apiKey,
-                           @Value("${gemini.model:gemini-1.5-flash}") String model,
+                           @Value("${gemini.model:gemini-flash-lite-latest}") String model,
                            @Value("${gemini.api.url:}") String apiUrlTemplate) {
         this.webClient = webClientBuilder.build();
         this.apiUrl = apiUrlTemplate.replace("{model}", model).replace("{key}", apiKey);
     }
 
     @Override
+    @CircuitBreaker(name = "gemini-api", fallbackMethod = "fallbackExtract")
     public Mono<Map<String, String>> extractDocumentData(String rawOcrText) {
         if (rawOcrText == null || rawOcrText.isBlank()) return Mono.just(new HashMap<>());
 
         String prompt = """
-                You are a strict OCR identity extraction engine for CEMAC zone documents.
+                You are a strict OCR document extraction engine for CEMAC zone documents (Cameroon, Gabon, Chad, Congo, CAR).
 
                 RULES:
-                - Return ONLY valid flat JSON.
-                - Use null for missing fields.
+                - Return ONLY valid flat JSON. No markdown, no explanations.
+                - Use null for missing or unreadable fields.
                 - Dates format: yyyy-MM-dd.
-                - documentType must be exactly: ID_CARD, PASSPORT, DRIVER_LICENSE.
+                - documentType MUST be exactly one of:
+                    ID_CARD | PASSPORT | DRIVER_LICENSE | VEHICLE_REGISTRATION | TAX_ID | BUSINESS_REGISTRATION
+                - If the document does not match any type above, use UNKNOWN.
 
-                Return a single JSON object with EXACTLY these keys:
+                FIELD MAPPING BY TYPE:
+
+                For ID_CARD, PASSPORT, DRIVER_LICENSE:
                 {
                   "documentType": "...", "issuingCountry": "...", "surname": "...",
                   "givenNames": "...", "dateOfBirth": "...", "issueDate": "...",
                   "expiryDate": "...", "documentNumber": "...", "sex": "...",
                   "height": "...", "placeOfBirth": "...", "occupation": "..."
                 }
+
+                For VEHICLE_REGISTRATION (Carte grise):
+                {
+                  "documentType": "VEHICLE_REGISTRATION", "issuingCountry": "...",
+                  "registrationNumber": "...", "brand": "...", "model": "...",
+                  "chassisNumber": "...", "ownerName": "...", "circulationDate": "..."
+                }
+
+                For TAX_ID (NIU / Numéro Identifiant Unique):
+                {
+                  "documentType": "TAX_ID", "issuingCountry": "...",
+                  "taxIdNumber": "...", "taxpayerName": "...",
+                  "issuingAuthority": "...", "issueDate": "..."
+                }
+
+                For BUSINESS_REGISTRATION (RCCM / Registre de Commerce):
+                {
+                  "documentType": "BUSINESS_REGISTRATION", "issuingCountry": "...",
+                  "rccmNumber": "...", "companyName": "...", "legalForm": "...",
+                  "registeredOffice": "...", "registrationDate": "..."
+                }
+
+                Return a single flat JSON object matching the detected document type.
+                Include only fields relevant to the detected type. Set null for any missing field.
 
                 Raw OCR text:
                 """ + rawOcrText;
@@ -83,5 +115,15 @@ public class GeminiAiAdapter implements AiAnalysisServicePort {
             log.warn("Failed to parse Gemini response: {}", e.getMessage());
         }
         return result;
+    }
+
+    /**
+     * Fallback method invoked when the "gemini-api" circuit breaker is open
+     * or when the Gemini call throws an exception.
+     */
+    public Mono<Map<String, String>> fallbackExtract(String rawOcrText, Throwable t) {
+        log.error("[gemini] Circuit breaker ouvert ou erreur Gemini : {}", t.getMessage());
+        return Mono.error(new ExternalServiceUnavailableException(
+                "Service d'analyse temporairement indisponible"));
     }
 }
